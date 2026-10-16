@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>BioStats | Biomedical statistics and scientific figures</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="https://cdn.plot.ly/plotly-3.7.0.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/pyodide/v0.28.3/full/pyodide.js"></script>
+  <script type="module" src="./src/main.js"></script>
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">β</span><div><strong>BioStats</strong><small>Scientific analysis studio</small></div></div>
+    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.1.0 · Prototype</span></div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <p class="eyebrow">PROJECT WORKSPACE</p>
+      <div id="project-name" class="project-name">No project selected</div>
+      <div id="project-path" class="muted xsmall">Choose an empty local folder to create a project.</div>
+      <div class="side-actions">
+        <button id="new-project" class="btn btn-primary">＋ New project</button>
+        <button id="open-project" class="btn btn-soft">Open project folder</button>
+      </div>
+      <div class="sidebar-divider"></div>
+      <p class="eyebrow">WORKFLOW</p>
+      <nav class="navlist" aria-label="Workflow sections">
+        <a href="#data-section" class="nav-link">01 <span>Import &amp; review data</span></a>
+        <a href="#analysis-section" class="nav-link">02 <span>Statistical analysis</span></a>
+        <a href="#figure-section" class="nav-link">03 <span>Graph editor</span></a>
+        <a href="#project-section" class="nav-link">04 <span>Saved analyses</span></a>
+      </nav>
+      <div class="sidebar-divider"></div>
+      <p class="side-note"><strong>Private by design.</strong> Selected numerical data are processed in your browser. This prototype does not send analysis values to GitHub.</p>
+      <p class="side-note">Use synthetic or non-sensitive data while we validate the application.</p>
+    </aside>
+    <main class="main-content">
+      <div class="heading-row"><div><p class="eyebrow">ANALYSIS WORKSPACE</p><h1>Group comparisons</h1><p class="subhead">One continuous measurement across independent experimental groups.</p></div><button id="load-example" class="btn btn-soft">Load example data</button></div>
+      <div id="message" role="status" aria-live="polite" class="message" hidden></div>
+      <section class="panel" id="data-section">
+        <div class="panel-head"><div><span class="step">01</span><h2>Data table</h2><p>One group per column. Rows are individual biological replicates.</p></div><label class="file-control btn btn-soft">Import CSV / XLSX<input type="file" id="data-file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden></label></div>
+        <div class="two-col"><div class="field"><label for="dataset-name">Dataset name</label><input id="dataset-name" value="Untitled experiment" maxlength="100"></div><div class="field"><label for="data-sheet">Data source / note (optional)</label><input id="data-sheet" placeholder="e.g., 3 mice per group; plasma cholesterol"></div></div>
+        <label for="data-input" class="field-label">Paste an Excel table, including the group headers</label>
+        <textarea id="data-input" spellcheck="false" placeholder="Control,Drug A,Drug B&#10;42,62,80&#10;47,61,85&#10;51,69,91"></textarea>
+        <div class="inline-actions"><button id="apply-data" class="btn btn-primary">Update data preview</button><span class="muted xsmall">Blank cells are ignored. Non-numeric measurements are rejected.</span></div>
+        <div id="data-preview" class="data-preview">No data loaded.</div>
+      </section>
+      <section class="panel" id="analysis-section">
+        <div class="panel-head"><div><span class="step">02</span><h2>Statistics</h2><p>Explicit test selection; no AI-generated P values.</p></div><span class="light-badge">Independent groups only · v0.1</span></div>
+        <div class="two-col"><div class="field"><label for="test-select">Statistical test</label><select id="test-select"><option value="anova">Ordinary one-way ANOVA + Tukey</option><option value="welch_anova">Welch's one-way ANOVA (no post hoc yet)</option><option value="kruskal">Kruskal–Wallis (no post hoc yet)</option><option value="ttest">Student's unpaired t test (2 groups)</option><option value="welch_ttest">Welch's unpaired t test (2 groups)</option></select></div><div class="field"><label for="alpha">Significance level</label><select id="alpha"><option value="0.05">α = 0.05</option><option value="0.01">α = 0.01</option></select></div></div>
+        <p class="hint">Choose tests based on design and assumptions, not on which produces the smallest P value. This version does not handle matched/repeated measures or nested observations.</p>
+        <div class="inline-actions"><button id="run-stats" class="btn btn-primary">Run statistical analysis</button><span id="analysis-running" class="muted xsmall"></span></div>
+        <div id="analysis-results" class="results-placeholder">Run an analysis to see test statistics, group summaries, package versions, and P values.</div>
+      </section>
+      <section class="panel" id="figure-section">
+        <div class="panel-head"><div><span class="step">03</span><h2>Figure editor</h2><p>Live controls. Export actual SVG vectors, not a screenshot.</p></div><span class="light-badge">Plotly SVG traces</span></div>
+        <div class="graph-controls">
+          <div class="field"><label for="plot-type">Graph type</label><select id="plot-type"><option value="dots">Individual values + mean</option><option value="bar">Mean + individual values</option><option value="box">Box + individual values</option></select></div>
+          <div class="field"><label for="error-type">Error bars</label><select id="error-type"><option value="sd">Standard deviation (SD)</option><option value="sem">Standard error (SEM)</option><option value="none">None</option></select></div>
+          <div class="field"><label for="palette">Colors</label><select id="palette"><option value="journal">Journal (blue/teal/gold)</option><option value="mono">Grayscale</option><option value="bright">High contrast</option></select></div>
+          <div class="field"><label for="y-max">Y-axis max (blank = automatic)</label><input id="y-max" type="number" step="any" placeholder="Auto"></div>
+          <div class="field"><label for="y-title">Y-axis title</label><input id="y-title" value="Measurement"></div>
+          <div class="field"><label for="figure-title">Figure title (optional)</label><input id="figure-title" placeholder="e.g., Cholesterol"></div>
+          <div class="field"><label for="font-size">Font size (px)</label><input id="font-size" type="number" min="8" max="32" value="15"></div>
+          <div class="field"><label for="plot-width">Export width (px)</label><input id="plot-width" type="number" min="300" max="2400" value="800"></div>
+        </div>
+        <div class="plot-container"><div id="plot" aria-label="Editable scientific figure" role="img"></div></div>
+        <div class="inline-actions wrap"><button id="export-svg" class="btn btn-primary">Export SVG vector</button><button id="export-png" class="btn btn-soft">Export PNG</button><button id="print-pdf" class="btn btn-soft">Print / Save vector PDF</button><span class="muted xsmall">SVG works well in Illustrator and Inkscape. Save as PDF through Chrome's print dialog.</span></div>
+      </section>
+      <section class="panel" id="project-section">
+        <div class="panel-head"><div><span class="step">04</span><h2>Project history</h2><p>Saved analyses do not get recalculated when software changes.</p></div></div>
+        <div class="inline-actions"><button id="save-analysis" class="btn btn-primary">Save analysis + figure to project</button><button id="download-report" class="btn btn-soft">Download HTML report</button></div>
+        <div id="saved-analyses" class="saved-list"><p class="muted">Create or open a project folder to save analyses.</p></div>
+        <p class="hint">Each saved analysis contains its original numerical inputs, test output, a human-readable report, graph settings, frozen SVG, and the versions of its computational libraries. Loading historical entries only views the saved records.</p>
+      </section>
+      <footer class="footer">BioStats v0.1.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
+    </main>
+  </div>
+</div>
+<div id="printable-figure" aria-hidden="true"></div>
+</body>
+</html>
