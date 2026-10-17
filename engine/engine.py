@@ -1,4 +1,4 @@
-"""BioStats 0.3.0 computational engine.
+"""BioStats 0.4.0 computational engine.
 
 Uses established scientific libraries. No custom approximations for p values.
 The browser records the exact function names, arguments and versions.
@@ -15,7 +15,7 @@ from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from statsmodels.stats.multitest import multipletests
 
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.4.0"
 
 
 def _finite_number(x):
@@ -29,6 +29,8 @@ def analyze(payload):
     """Analyze independent groups; return only JSON-serializable values."""
     if isinstance(payload, str):
         payload = json.loads(payload)
+    if payload.get("family", "groups") != "groups":
+        return analyze_family(payload)
     groups = payload["groups"]
     test = payload["test"]
     alternative = payload.get("alternative", "two-sided")

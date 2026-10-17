@@ -8,7 +8,7 @@ export async function runStatisticalTest(input, onState = () => {}) {
       onState('Loading Python runtime…');
       const py = await window.loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.28.3/full/' });
       onState('Loading SciPy and statsmodels…');
-      await py.loadPackage(['numpy', 'scipy', 'statsmodels']);
+      await py.loadPackage(['numpy', 'scipy', 'statsmodels', 'pandas']);
       return py;
     })();
   }
@@ -19,7 +19,9 @@ export async function runStatisticalTest(input, onState = () => {}) {
       const response = await fetch(url);
       if (!response.ok) throw new Error('Could not load the statistical engine');
       const source = await response.text();
-      await pyodideInstance.runPythonAsync(source);
+      const extension = await fetch(new URL('../engine/families.py', import.meta.url));
+      if (!extension.ok) throw new Error('Could not load specialized statistical modules');
+      await pyodideInstance.runPythonAsync((await extension.text())+'\n'+source);
       codeLoaded = true;
     }
     pyodideInstance.globals.set('analysis_json', JSON.stringify(input));

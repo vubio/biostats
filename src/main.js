@@ -2,11 +2,14 @@ import {runStatisticalTest} from './stats.js';
 import {renderPlot,figureSvg,figurePng,downloadText,downloadDataUrl,defaultChartSettings} from './charts.js';
 import {newProject,openProject,isProjectOpen,currentProject,projectFolderName,saveNewRecord,loadRecord,makeReport,escapeHtml,formatP,APP_VERSION} from './projects.js';
 import {examples,examplesFor,isPairedTest,isTTest} from './examples.js';
+import {METHODS,FAMILY_NAMES,isSpecial,specialHeaders,defaultLongRows,validateSpecialTable,familyForTest} from './families.js';
+import {renderSpecial} from './plots-special.js';
 
 const $=id=>document.getElementById(id);
 const PAGE_SIZE=50;
 let rows=[];                      // Canonical, editable values: always used for statistics
 let groups=[];                    // Validated numeric projection of those rows
+let familyData=null;               // Validated long-format records for specialized analyses
 let subjectIds=[];
 let gridPage=0;
 let provenance={kind:'manual',filename:null};
@@ -19,6 +22,9 @@ let previewRevision=0;
 let chosenPairs=new Set();
 const pairKey=(a,b)=>JSON.stringify([a,b].sort());
 const entryTest=()=>$('test-select').value;
+const entryFamily=()=>$('analysis-family').value;
+const special=()=>isSpecial(entryTest());
+const validDataset=()=>special()?Boolean(familyData?.records?.length):Boolean(groups.length);
 const paired=()=>isPairedTest(entryTest());
 const name=()=>$('dataset-name').value.trim()||'Untitled experiment';
 const note=()=>$('data-sheet').value.trim();
@@ -34,7 +40,7 @@ function invalidate(){
   $('analysis-results').className='results-placeholder';
   $('analysis-results').textContent='Dataset or analysis settings changed. Run statistics again on the current table.';
 }
-function signature(){return JSON.stringify({rows,name:name(),note:note(),test:entryTest(),alternative:alternative(),alpha:alpha()});}
+function signature(){return JSON.stringify({rows,name:name(),note:note(),family:entryFamily(),test:entryTest(),alternative:alternative(),alpha:alpha()});}
 function csvCell(v){const t=String(v??'');return /[",\r\n\t]/.test(t)?`"${t.replaceAll('"','""')}"`:t;}
 function canonicalCsv(data){return data.map(row=>row.map(csvCell).join(',')).join('\n')+'\n';}
 async function sha256(str){const data=new TextEncoder().encode(str);return hashBytes(data);}
@@ -107,7 +113,7 @@ function renderGrid(){
   rows[0].forEach((v,i)=>{
     const cell=document.createElement('th');const input=document.createElement('input');input.value=v;
     input.dataset.row='0';input.dataset.col=String(i);input.setAttribute('aria-label',`Column ${i+1} header`);
-    if(paired()&&i===0){input.readOnly=true;input.title='Paired tables require the Subject ID column';}
+    if((paired()&&i===0)||special()){input.readOnly=true;input.title='This analysis requires fixed column headers; create a new template to change the method.';}
     cell.append(input);tr.append(cell);
   });head.append(tr);table.append(head);
   const body=document.createElement('tbody');
@@ -125,17 +131,17 @@ function renderGrid(){
   $('table-navigation').hidden=dataN<=PAGE_SIZE;
   $('page-info').textContent=`Rows ${Math.max(1,start)}–${Math.max(1,end-1)} of ${dataN}`;
   $('prev-page').disabled=gridPage===0;$('next-page').disabled=gridPage>=pages-1;
-  $('add-group').disabled=paired()||rows[0].length>=40;
+  $('add-group').disabled=special()||paired()||rows[0].length>=40;
   $('remove-row').disabled=rows.length<=2;
 }
 async function reproject({strict=false}={}){
   const revision=++previewRevision;
-  if(!rows.length){groups=[];subjectIds=[];plotEl.replaceChildren();plotEl.textContent='Create a dataset to display a graph.';return;}
+  if(!rows.length){groups=[];subjectIds=[];familyData=null;plotEl.replaceChildren();plotEl.textContent='Create a dataset to display a graph.';return;}
   let parsed;
-  try { parsed=validateTable(rows); }
+  try { parsed=special()?validateSpecialTable(rows,entryTest()):validateTable(rows); }
   catch(e){
     if(revision===previewRevision){
-      groups=[];subjectIds=[];plotEl.replaceChildren();
+      groups=[];subjectIds=[];familyData=null;plotEl.replaceChildren();
       plotEl.textContent=`Data preview unavailable: ${e.message}`;
       $('edit-state').textContent=`Check table: ${e.message}`;
     }
@@ -143,8 +149,8 @@ async function reproject({strict=false}={}){
     return;
   }
   if(revision!==previewRevision)return;
-  groups=parsed.groups;subjectIds=parsed.subjectIds;
-  $('edit-state').textContent=`${groups.length} groups · ${Math.max(...groups.map(g=>g.values.length))} max observations/group · ${sourceDescription()}`;
+  if(special()){familyData=parsed;groups=[];subjectIds=[];}else{groups=parsed.groups;subjectIds=parsed.subjectIds;familyData=null;}
+  $('edit-state').textContent=special()?`${parsed.rows} complete observational rows · ${sourceDescription()}`:`${groups.length} groups · ${Math.max(...groups.map(g=>g.values.length))} max observations/group · ${sourceDescription()}`;
   // A plotting-library failure is distinct from invalid data. Never erase a
   // statistically valid dataset with a generic "complete the table" message.
   await draw();
@@ -158,7 +164,7 @@ async function replaceGrid(newRows,newSource,sourceSnapshot=null){
 }
 async function blankTable(){
   const t=paired();const headers=t?['Subject ID','Before','After']:(isTTest(entryTest())?['Control','Treatment']:['Control','Drug A','Drug B']);
-  const data=[headers,...Array.from({length:6},(_,i)=>headers.map((_,j)=>t&&j===0?`Subject ${i+1}`:''))];
+  const data=special()?defaultLongRows(entryTest()):[headers,...Array.from({length:6},(_,i)=>headers.map((_,j)=>t&&j===0?`Subject ${i+1}`:''))];
   await replaceGrid(data,{kind:'manual',filename:null});$('data-input').value='';message('Blank editable table created. Type directly into any cell.');
 }
 function readSettings(){
@@ -179,8 +185,13 @@ function selectedComparisons(){
   return cs.filter(c=>chosenPairs.has(pairKey(c.group1,c.group2)));
 }
 async function draw({strict=false}={}){
-  if(!groups.length)return;
+  if(!validDataset())return;
   try{
+    if(special()){
+      $('annotation-warning').textContent='';
+      await renderSpecial(plotEl,entryTest(),familyData.records,readSettings(),lastDataSignature===signature()?lastAnalysis:null);
+      return;
+    }
     const selections=selectedComparisons();
     if(selections.length>15)throw Error(`${selections.length} pairs selected. Maximum 15 graph brackets; select a subset in the comparison matrix. All P values remain accessible in the results.`);
     $('annotation-warning').textContent='';
@@ -197,24 +208,22 @@ function renderComparisonMatrix(){
   panel.hidden=!comparisons.length;
   const dest=$('comparison-matrix');dest.replaceChildren();
   if(!comparisons.length)return;
-  const headings=['Graph','Group 1','Group 2','Mean difference (2 − 1)','Raw P','Adjusted P'];
+  const headings=special()?['Group 1','Group 2','Raw P','Adjusted P']:['Graph','Group 1','Group 2','Mean difference (2 − 1)','Raw P','Adjusted P'];
   const table=document.createElement('table');table.className='results-table';
   const header=document.createElement('thead');const hrow=document.createElement('tr');
   headings.forEach(h=>{const th=document.createElement('th');th.textContent=h;hrow.append(th);});header.append(hrow);table.append(header);
   const body=document.createElement('tbody');
   comparisons.forEach(c=>{
-    const tr=document.createElement('tr');const td=document.createElement('td');
-    const ch=document.createElement('input');ch.type='checkbox';ch.className='pair-checkbox';ch.dataset.pair=pairKey(c.group1,c.group2);
-    ch.setAttribute('aria-label',`Display ${c.group1} versus ${c.group2} on figure`);
-    ch.checked=chosenPairs.has(pairKey(c.group1,c.group2));
-    td.append(ch);tr.append(td);
-    for(const value of [c.group1,c.group2,c.difference.toPrecision(5),matrixP(c.p_raw),matrixP(c.p_adjusted)]){
+    const tr=document.createElement('tr');
+    if(!special()){const td=document.createElement('td');const ch=document.createElement('input');ch.type='checkbox';ch.className='pair-checkbox';ch.dataset.pair=pairKey(c.group1,c.group2);
+      ch.setAttribute('aria-label',`Display ${c.group1} versus ${c.group2} on figure`);ch.checked=chosenPairs.has(pairKey(c.group1,c.group2));td.append(ch);tr.append(td);}
+    for(const value of (special()?[c.group1,c.group2,matrixP(c.p_raw),matrixP(c.p_adjusted)]:[c.group1,c.group2,c.difference.toPrecision(5),matrixP(c.p_raw),matrixP(c.p_adjusted)])){
       const td=document.createElement('td');td.textContent=value;tr.append(td);
     }
     body.append(tr);
   });
   table.append(body);dest.append(table);
-  $('comparison-note').textContent=`Method: ${lastAnalysis.posthoc.method}. All ${comparisons.length} pairs are in the adjustment family (for multi-group tests), even if only some brackets are displayed. Tukey HSD does not provide a separate unadjusted pairwise P value.`;
+  $('comparison-note').textContent=special()?`Method: ${lastAnalysis.posthoc.method}. Holm adjustment includes all ${comparisons.length} survival comparisons. Graph brackets are not currently used for Kaplan–Meier curves.`:`Method: ${lastAnalysis.posthoc.method}. All ${comparisons.length} pairs are in the adjustment family (for multi-group tests), even if only some brackets are displayed. Tukey HSD does not provide a separate unadjusted pairwise P value.`;
   dest.hidden=!$('show-matrix').checked;
   syncPairChecks();
 }
@@ -224,13 +233,21 @@ function syncPairChecks(){
   document.querySelectorAll('.pair-checkbox').forEach(ch=>{ch.checked=selected.has(ch.dataset.pair);});
 }
 function resultHtml(r){
-  const summaries=r.group_summaries.map(x=>`<tr><td>${escapeHtml(x.group)}</td><td>${x.n}</td><td>${x.mean.toPrecision(5)}</td><td>${x.sd.toPrecision(5)}</td></tr>`).join('');
-  const comp=r.posthoc?.comparisons?.length?`<p class="hint">Pairwise comparison results are shown in the matrix below. These are exploratory unless comparisons were planned before examining the data.</p>`:'';
-  return `<div class="result-card"><strong>${escapeHtml(r.label)}</strong><div class="value">P = ${formatP(r.p_value)}</div><p>Statistic = ${r.statistic.toPrecision(6)} · df = ${r.df.map(x=>Number(x).toPrecision(5)).join(', ')} · α = ${r.alpha}${isTTest(r.test_id)?' · alternative = '+escapeHtml(r.alternative):''}</p></div><table class="results-table"><thead><tr><th>Group</th><th>n</th><th>Mean</th><th>SD</th></tr></thead><tbody>${summaries}</tbody></table>${comp}<p class="hint">${escapeHtml(r.engine.primary_function)} · SciPy ${escapeHtml(r.engine.python_packages.scipy)} · statsmodels ${escapeHtml(r.engine.python_packages.statsmodels)}.</p><p class="hint">${escapeHtml(r.limitations)}</p>`;
+  const primary=r.p_value==null?'No hypothesis-test P value':`${r.primary_effect?escapeHtml(r.primary_effect)+': ':''}P = ${formatP(r.p_value)}`;
+  const statistic=r.statistic==null?'':`Statistic = ${Number(r.statistic).toPrecision(6)} · df = ${(r.df||[]).map(x=>Number(x).toPrecision(5)).join(', ')} · α = ${r.alpha}`;
+  const summaries=(r.group_summaries||[]).map(x=>`<tr><td>${escapeHtml(x.group)}</td><td>${x.n}</td><td>${x.mean.toPrecision(5)}</td><td>${x.sd.toPrecision(5)}</td></tr>`).join('');
+  const summaryTable=summaries?`<table class="results-table"><thead><tr><th>Group / cell</th><th>n</th><th>Mean</th><th>SD</th></tr></thead><tbody>${summaries}</tbody></table>`:'';
+  const effects=r.effects?.length?`<h3>Factor-level effects</h3><table class="results-table"><thead><tr><th>Effect</th><th>F</th><th>Numerator / denominator df</th><th>P</th></tr></thead><tbody>${r.effects.map(x=>`<tr><td>${escapeHtml(x.effect)}</td><td>${x.statistic.toPrecision(5)}</td><td>${x.df.join(' / ')}</td><td>${formatP(x.p_value)}</td></tr>`).join('')}</tbody></table>`:'';
+  const survival=r.survival?.length?`<h3>Survival observations</h3><table class="results-table"><thead><tr><th>Group</th><th>Animals / subjects</th><th>Events</th><th>Censored</th></tr></thead><tbody>${r.survival.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${x.n}</td><td>${x.events}</td><td>${x.censored}</td></tr>`).join('')}</tbody></table>`:'';
+  const fit=r.fits?.length?`<h3>Fitted curves (relative IC50)</h3><table class="results-table"><thead><tr><th>Curve</th><th>IC50 (input dose units)</th><th>Approximate 95% CI</th><th>Hill slope</th><th>R²</th></tr></thead><tbody>${r.fits.map(x=>`<tr><td>${escapeHtml(x.group)}</td><td>${x.ic50.toPrecision(5)}</td><td>${x.ci95_approx?.map(v=>v.toPrecision(4)).join(' – ')||'Unavailable'}</td><td>${x.hill.toPrecision(4)}</td><td>${x.r_squared.toPrecision(4)}</td></tr>`).join('')}</tbody></table>`:'';
+  const comp=r.posthoc?.comparisons?.length?`<p class="hint">Pairwise comparisons are in the matrix below. Adjusted P values account for the displayed comparison family.</p>`:'';
+  const pkg=r.engine.python_packages||{};
+  return `<div class="result-card"><strong>${escapeHtml(r.label)}</strong><div class="value">${primary}</div><p>${statistic}</p></div>${effects}${summaryTable}${survival}${fit}${comp}<p class="hint">${escapeHtml(r.engine.primary_function)} · SciPy ${escapeHtml(pkg.scipy)} · statsmodels ${escapeHtml(pkg.statsmodels)}.</p><p class="hint">${escapeHtml(r.limitations)}</p>`;
 }
+
 async function runAnalysis(){
   await reproject({strict:true});
-  const input={groups:structuredClone(groups),test:entryTest(),alpha:alpha(),alternative:alternative(),subject_ids:paired()?structuredClone(subjectIds):null};
+  const input=special()?{family:entryFamily(),test:entryTest(),records:structuredClone(familyData.records),alpha:alpha()}:{groups:structuredClone(groups),test:entryTest(),alpha:alpha(),alternative:alternative(),subject_ids:paired()?structuredClone(subjectIds):null};
   const sig=signature();$('run-stats').disabled=true;
   try{
     const result=await runStatisticalTest(input,status=>{$('analysis-running').textContent=status;$('engine-status').textContent=status;});
@@ -247,12 +264,12 @@ async function makeCurrentRecord(){
   return {schema_version:'1.1.0',created_at:new Date().toISOString(),
     software:{name:'BioStats',version:APP_VERSION,runtime:'Pyodide 0.28.3',source_page:location.origin+location.pathname,
       source_git_commit:'recorded by the deployment release when available'},
-    dataset:{name:name(),note:note(),groups:preserve?structuredClone(groups):undefined,
+    dataset:{name:name(),note:note(),family:entryFamily(),test_id:entryTest(),groups:preserve&&!special()?structuredClone(groups):undefined,records:preserve&&special()?structuredClone(familyData.records):undefined,
       processed_sha256:await sha256(processed),processed_values_stored:preserve,
       source:{...provenance,modified_after_import:provenance.kind==='import'?fileChanged():null,
         modified_after_example:provenance.kind==='example'?fileChanged():null,
         original_file_unmodified:true}},
-    graph:{settings:readSettings(),renderer:'Plotly.js',renderer_version:'3.7.0'},statistics:lastAnalysis};
+    graph:{settings:readSettings(),renderer:'Plotly.js',renderer_version:'3.7.0'},statistics:(()=>{const result=structuredClone(lastAnalysis);if(!preserve){delete result.subject_curves;if(result.survival)result.survival.forEach(curve=>{delete curve.censors});}return result;})()};
 }
 async function save(){
   if(!isProjectOpen())throw Error('Create or open a local project folder first.');
@@ -274,7 +291,7 @@ function showSaved(){
   for(const rec of [...p.analyses].reverse()){
     const row=document.createElement('div');row.className='saved-row';const heading=document.createElement('div');
     const strong=document.createElement('strong');strong.textContent=rec.name;
-    const small=document.createElement('small');small.textContent=`${rec.test} · P=${formatP(rec.p_value)} · BioStats ${rec.app_version} · ${new Date(rec.date).toLocaleString()}`;
+    const small=document.createElement('small');small.textContent=`${rec.test} · ${rec.p_value==null?'fit (no P)':`P=${formatP(rec.p_value)}`} · BioStats ${rec.app_version} · ${new Date(rec.date).toLocaleString()}`;
     heading.append(strong,small);
     const actions=document.createElement('div');actions.className='saved-actions';
     const button=document.createElement('button');button.className='btn btn-soft';button.textContent='View frozen original';button.onclick=()=>handle(()=>viewFrozen(rec.id));
@@ -285,7 +302,7 @@ async function viewFrozen(id){
   const {analysis,svg}=await loadRecord(id);
   const dialog=document.createElement('dialog');dialog.className='frozen-dialog';
   const heading=document.createElement('h2');heading.textContent=`Frozen original: ${analysis.dataset.name}`;
-  const intro=document.createElement('p');intro.textContent=`${analysis.statistics.label} · P=${formatP(analysis.statistics.p_value)} · BioStats ${analysis.software.version} · ${analysis.created_at}`;
+  const intro=document.createElement('p');intro.textContent=`${analysis.statistics.label} · ${analysis.statistics.p_value==null?'No hypothesis-test P value':`P=${formatP(analysis.statistics.p_value)}`} · BioStats ${analysis.software.version} · ${analysis.created_at}`;
   const img=document.createElement('img');const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));img.src=url;img.alt='Original preserved vector figure';img.style.width='100%';
   const tools=document.createElement('div');tools.className='inline-actions';
   const download=document.createElement('button');download.className='btn btn-primary';download.textContent='Download original SVG';download.onclick=()=>downloadText(`${id}.svg`,svg,'image/svg+xml');
@@ -294,11 +311,26 @@ async function viewFrozen(id){
   dialog.addEventListener('close',()=>{URL.revokeObjectURL(url);dialog.remove();});document.body.append(dialog);dialog.showModal();
 }
 function handle(fn){Promise.resolve().then(fn).catch(e=>{if(e.name==='AbortError')return;message(e?.message||String(e),true);});}
+function populateTestOptions(){
+  const f=entryFamily(),methods=METHODS[f];if(!methods)throw Error('Unknown analysis family');
+  const prev=entryTest();const sel=$('test-select');sel.replaceChildren();
+  methods.forEach(([value,label])=>{const o=document.createElement('option');o.value=value;o.textContent=label;sel.append(o)});
+  if(methods.some(x=>x[0]===prev))sel.value=prev;
+}
+function showMethodControls(){
+  const long=special();
+  $('annotation-mode').disabled=long;$('annotation-format').disabled=long;
+  $('y-max').disabled=entryTest()==='survival_logrank';
+  $('annotation-description').hidden=long;
+  $('plot-type').disabled=long;
+  $('add-group').disabled=long||paired();
+}
 function fillExampleOptions(){
   const opts=examplesFor(entryTest());const list=$('example-select');list.replaceChildren();
   opts.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.title;list.append(o);});
   $('alternative-field').hidden=!isTTest(entryTest());
-  $('template-hint').textContent=paired()?'Matched format: first column is Subject ID; the next two columns are measurements on the SAME subject. Every pair must occupy one row.':'Independent format: first row gives group names; each subsequent cell is a measurement from an independent biological replicate. No row-wise pairing is implied.';
+  $('template-hint').textContent=special()?`Required long-format columns: ${specialHeaders(entryTest()).join(' | ')}. Each row describes one biological observation; repeated-measures rows share a Subject ID.`:paired()?'Matched format: first column is Subject ID; the next two columns are measurements on the SAME subject. Every pair must occupy one row.':'Independent format: first row gives group names; each subsequent cell is a measurement from an independent biological replicate. No row-wise pairing is implied.';
+  showMethodControls();
   $('example-info').hidden=true;$('example-info-btn').setAttribute('aria-expanded','false');
   updateExampleInfo();
 }
@@ -320,11 +352,17 @@ async function importData(file){
 }
 function bind(){
   let previousTest=entryTest();
+  $('analysis-family').addEventListener('change',()=>{
+    if(rows.length&&!confirm('Switching analysis family will clear the current editable table. Save or copy your data first. Continue?')){ $('analysis-family').value=familyForTest(previousTest);return;}
+    rows=[];groups=[];familyData=null;subjectIds=[];provenance={kind:'manual',filename:null};importedRowsSnapshot=null;
+    populateTestOptions();previousTest=entryTest();invalidate();renderGrid();fillExampleOptions();reproject();
+    $('annotation-mode').value='none';message(`Selected ${FAMILY_NAMES[entryFamily()]}. Load an example or create a method-specific table.`);
+  });
   $('test-select').addEventListener('change',()=>{
     const next=entryTest();
-    if(rows.length&&isPairedTest(previousTest)!==isPairedTest(next)&&!confirm('The selected test uses a different table format. Keep your current values elsewhere before switching. Clear the current table?')){$('test-select').value=previousTest;return;}
-    if(rows.length&&isPairedTest(previousTest)!==isPairedTest(next)){
-      rows=[];groups=[];subjectIds=[];importedRowsSnapshot=null;provenance={kind:'manual',filename:null};renderGrid();plotEl.textContent='Select a new example or create a blank table.';
+    if(rows.length&&(isPairedTest(previousTest)!==isPairedTest(next)||specialHeaders(previousTest)?.join('|')!==specialHeaders(next)?.join('|'))&&!confirm('The selected test uses a different table format. Keep your current values elsewhere before switching. Clear the current table?')){$('test-select').value=previousTest;return;}
+    if(rows.length&&(isPairedTest(previousTest)!==isPairedTest(next)||specialHeaders(previousTest)?.join('|')!==specialHeaders(next)?.join('|'))){
+      rows=[];groups=[];familyData=null;subjectIds=[];importedRowsSnapshot=null;provenance={kind:'manual',filename:null};renderGrid();plotEl.textContent='Select a new example or create a blank table.';
     }
     previousTest=next;$('alternative').value='two-sided';invalidate();fillExampleOptions();reproject();
   });
@@ -344,6 +382,7 @@ function bind(){
   });
   $('remove-row').onclick=()=>handle(async()=>{if(rows.length<3)throw Error('Keep at least one data row.');rows.pop();invalidate();renderGrid();refreshLater();});
   $('add-group').onclick=()=>handle(async()=>{
+    if(special())throw Error('This analysis uses fixed long-format columns. Add a new row for another observation.');
     if(paired())throw Error('Paired t tests require exactly two measurement columns.');
     if(!rows.length)return blankTable();if(rows[0].length>=40)throw Error('Maximum 40 group columns in the editor.');
     rows.forEach((row,i)=>row.push(i===0?`Group ${row.length+1}`:''));invalidate();renderGrid();refreshLater();
@@ -360,11 +399,12 @@ function bind(){
     e.preventDefault();let pasted=parseRows(text);
     const ri=Number(inp.dataset.row),ci=Number(inp.dataset.col);
     const newWidth=Math.max(rows[0].length,ci+Math.max(...pasted.map(x=>x.length)));
+    if(special()&&newWidth>rows[0].length){message('Cannot add columns to this fixed long-format template.',true);return;}
     if(paired()&&newWidth>3){message('A paired table has exactly three columns: Subject ID, Before, After.',true);return;}
     if(newWidth>40){message('Maximum 40 columns supported.',true);return;}
     rows.forEach(row=>{while(row.length<newWidth)row.push('');});
     while(rows.length<ri+pasted.length)rows.push(Array(newWidth).fill(''));
-    pasted.forEach((r,i)=>r.forEach((v,j)=>{if(paired()&&ri+i===0&&ci+j===0)return;rows[ri+i][ci+j]=v;}));
+    pasted.forEach((r,i)=>r.forEach((v,j)=>{if(ri+i===0&&(special()||(paired()&&ci+j===0)))return;rows[ri+i][ci+j]=v;}));
     invalidate();renderGrid();refreshLater();message('Pasted spreadsheet values into editable table.');
   });
   $('apply-data').onclick=()=>handle(async()=>{
@@ -392,10 +432,10 @@ function bind(){
   $('store-values').onchange=()=>{$('storage-warning').textContent=$('store-values').checked?
     'The exact analyzed numerical table will be saved as input.csv in the project (recommended for reproducibility).':
     'Numeric input will NOT be saved. The report will retain source-file metadata, input fingerprint, whether data were edited, and saved P values. Recalculation may not be possible.';};
-  $('export-svg').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await draw({strict:true});downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
-  $('export-png').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await draw({strict:true});downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
+  $('export-svg').onclick=()=>handle(async()=>{if(!validDataset())throw Error('Finish entering valid data first.');await draw({strict:true});downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
+  $('export-png').onclick=()=>handle(async()=>{if(!validDataset())throw Error('Finish entering valid data first.');await draw({strict:true});downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
   $('print-pdf').onclick=()=>handle(async()=>{
-    if(!groups.length)throw Error('Finish entering valid data first.');
+    if(!validDataset())throw Error('Finish entering valid data first.');
     await draw({strict:true});
     const svg=await figureSvg(plotEl,readSettings()),url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
     const holder=$('printable-figure');holder.replaceChildren();const img=document.createElement('img');img.src=url;img.alt='Vector figure';holder.append(img);
@@ -403,4 +443,4 @@ function bind(){
   });
   $('download-report').onclick=()=>handle(async()=>{const rec=await makeCurrentRecord();downloadText('biostats_statistical_report.html',makeReport(rec),'text/html');});
 }
-bind();fillExampleOptions();showSaved();plotEl.textContent='Choose a method and load example, create a blank table, or import measurements.';
+populateTestOptions();bind();fillExampleOptions();showSaved();plotEl.textContent='Choose a method and load example, create a blank table, or import measurements.';

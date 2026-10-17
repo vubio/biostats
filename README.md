@@ -1,58 +1,68 @@
-# BioStats · v0.3.0 — experimental prototype
+# BioStats · v0.4.0 — experimental prototype
 
 **Live app:** https://vubio.github.io/biostats/  
 **Source:** https://github.com/vubio/biostats
 
-BioStats is a free, browser-first biomedical statistics and vector graphing tool. It is **not validated for manuscript submission**; compare any outputs with independently verified software before scientific use.
+BioStats is a free browser-first biomedical statistics and vector graphing application. It is **an early prototype and not validated for manuscript submission**. Independently verify results, underlying biological replicates, and assumptions before scientific use.
 
-## How it works
+## Workflow
 
-1. **Choose a statistical method first.** The table structure changes for independent versus paired designs. Time-course, two-way ANOVA, survival and IC50 modules are still planned, not currently available.
-2. **Create a blank editable table**, import CSV/XLS/XLSX or choose a small synthetic teaching example. Every currently supported test has at least one example. The ⓘ explanation describes the design and assumptions; t tests offer two-sided and directional alternatives.
-3. **Edit the imported or entered values** in a spreadsheet-like grid. Supports adding rows/groups, pasting cells from Excel and paginating large tables. Statistical tests always use the current validated numbers; every edit invalidates prior on-screen P values until reanalysis.
-4. **Run calculations** using SciPy/statsmodels through Pyodide. Supported: Student and Welch independent two-group t tests (two-sided, one-sided), paired t test (including two-/one-sided alternatives), ordinary one-way ANOVA with Tukey post hoc, Welch ANOVA (omnibus only), and Kruskal–Wallis (omnibus only).
-5. **Edit and export graphs.** Plotly scatter, bar and box plots with axes, labels, palettes, error bars, SVG vector export, PNG and a browser print-to-PDF option.
-6. **Create or open a local project folder** in desktop Chrome. Save frozen statistical results, an immutable SVG snapshot, graph settings, source/provenance information and HTML methods report. Project files are separate from the online code and from original raw data.
+1. **Choose an analysis family and method first.** Every supported method has a distinct, documented table template. Switching between incompatible formats asks for confirmation before clearing unsaved data.
+2. **Load explained synthetic examples**, create a blank table, paste from Excel, or import CSV/XLS/XLSX. Edit measurements directly; the next analysis always uses the last edited values. Header labels are fixed for long-format families.
+3. **Run the Python engine** in your browser using Pyodide, NumPy, pandas, SciPy and statsmodels. Record the specific function and package versions, test assumptions and available estimates.
+4. **Export vector plots as SVG** (or PNG, Chrome-print PDF). Statistical plotting is separated from calculations.
+5. **Create/open a separate local project folder**. Save frozen SVG, analysis JSON, human-readable statistical report and optionally the exact analyzed CSV table. No experiment data is uploaded to GitHub.
+
+## Modules in v0.4
+
+| Family | Data-table header | Implemented methods | Important limits |
+|---|---|---|---|
+| One measurement across groups | Group columns as header row | Student/Welch/paired t tests; one-way ANOVA + Tukey; Welch ANOVA + Welch/Holm; Kruskal–Wallis + Mann–Whitney/Holm | Check statistical assumptions, biological independence, matching |
+| Independent time course | `Group,Time,Value` | Balanced independent two-way ANOVA (group, time, interaction) | Each row must be an independent biological unit; repeated same animal is **not** supported in this mode |
+| Repeated time course (single cohort) | `Subject ID,Time,Value` | Complete-case one-factor repeated-measures ANOVA across time | Same subjects across time; **one cohort only**; check sphericity, no GG correction |
+| Two-factor design | `Factor A,Factor B,Value` | Balanced independent two-factor ANOVA (A, B, interaction) | Complete balanced replicate cells (at least 2 per cell), independent units; no simple-effect post hoc yet |
+| Survival | `Subject ID,Group,Time,Event (1=event; 0=censored)` | Kaplan–Meier estimator, log-rank omnibus test, pairwise log-rank + Holm for 3+ groups | One unique subject per row; event=1, censored=0; censoring is not failure; no Cox hazard ratio yet |
+| Dose response | `Group,Dose,Response` | Decreasing 4-parameter logistic fit, relative IC50, approximate CI, Hill, R² | Positive concentrations in one consistent unit; measured dose range must bracket IC50; no ascending curves or between-curve test; no P value for curve fit |
+
+All five new examples have explanations describing the assumptions and design. Specialized plots include interaction/time curves, individual repeated-subject traces, Kaplan–Meier steps and censor ticks, and semilog fitted 4PL curves. Specialized families do **not** support significance brackets yet (survival group pairs appear in a Holm-adjusted comparison matrix). For two-factor ANOVA, the headline P value is explicitly the interaction effect; the report gives P values for all factors.
 
 ## Project folder and provenance
 
 ```
 Research/Experiment_001/
-├── Raw_Data/                 # Independent originals, never modified by BioStats
+├── Raw_Data/                 # Originals, never modified by BioStats
 └── Statistics_Project/
     ├── project.json
     ├── Data/
-    ├── Analyses/             # timestamped immutable analysis.json + SVG + report
+    ├── Analyses/             # Immutable analysis.json, frozen SVG, HTML report, optional input.csv
     ├── Figures/
     ├── Reports/
     └── History/
 ```
 
-Check **Save the exact analyzed numerical values** to include the real processed table in `input.csv` and `Data/`. This is the default. You can uncheck it for large inputs: no numerical table is archived; the report still records the computed statistics and a SHA-256 fingerprint of the exact processed CSV plus (for imports) filename, byte size, last-modified time, original file SHA-256, and whether the values were edited in the app. If you omit numeric values and no longer have the source data, precise recomputation may be impossible.
+Check **Save the exact analyzed numerical values** (default) to archive the exact CSV table. Uncheck for large inputs; the saved analysis still includes statistical results, input fingerprint, imported filename/file SHA-256, edit status and frozen figure, but exact recomputation might be impossible. Some derived curve coordinates remain part of the frozen output. The original raw file is never changed. File-system access requires an explicit Chrome directory permission.
 
-**Important:** All original input files are read-only. Historical saved analyses remain frozen; no silent rerun on open. The project format uses a compatible 1.x schema to open project indexes created with BioStats v0.1.0.
+Original v0.1–v0.3 saved project records remain readable; every save adds a new immutable analysis entry, never overwriting previous P values or SVG figures. The `project.json` metadata schema remains 1.x. Git history preserves source commits, but reproducible historical installations and versioned Pages URLs still need separate release archival.
 
-## Scientific scope and security
+## Scientific and security notes
 
-- **Synthetic examples are learning tools, not biomedical evidence.** Do not select significance alternatives or tests based on observed P values; consider experimental units, paired IDs, independence, approximate normality and homogeneity of variances.
-- Matched t tests use a `Subject ID` column with one matched subject per row; incomplete pairs are rejected. The program never matches independent rows automatically.
-- Welch ANOVA and Kruskal–Wallis currently have no implemented post hoc comparisons. It would be incorrect to claim pairwise significance from their omnibus P values.
-- The browser runs Python locally via Pyodide; the app does not upload user-provided measurements to GitHub. Some dependencies are fetched over the network from CDNs; do not input identifiable patient data or confidential source material until a security review and dependency audit have been completed.
-- SVG outputs use true vector Plotly traces. Check fonts and symbol rendering in your vector editor; use PNG only when raster output is explicitly intended.
-- Preserve regular backups of project folders. Historic release archives and versioned web URLs are a planned feature; GitHub commit history alone is not a promise that any old live runtime can be reproduced exactly.
+- Recorded library name alone is insufficient for reproducibility: `analysis.json` and the HTML report also include exact numerical results, function names, arguments, package versions, exported graph settings, and provenance.
+- Check experimental unit and assumptions. The longitudinal **independent** model cannot be used for repeated measurements of the same animal. Repeated-measures ANOVA assumes sphericity for three or more time points; no corrected P value is supplied.
+- One-way ANOVA uses Tukey-adjusted comparisons. Welch ANOVA uses pairwise Welch t tests + Holm (not Games–Howell), while Kruskal uses pairwise Mann–Whitney U tests + Holm (not Dunn's). Choose test models and planned comparisons before inspecting significance.
+- `IC50` here means the concentration halfway between modeled upper and lower asymptotes, not the dose at 50% of untreated control. An estimated IC50 may be non-identifiable for poorly sampled or flat responses; the fitter rejects obvious out-of-range solutions. The reported interval is approximate, not a bootstrap profile likelihood interval.
+- Python runs locally in Chrome using Pyodide but libraries arrive from external CDNs. Do not enter identifiable patient data or confidential data until dependency/security audits are completed.
+- Exported SVGs contain vector geometry. Check symbol fonts and line widths in Illustrator or Inkscape before publication.
+- Back up local project folders. Experimental input files are stored separately from the public application code.
 
-## Source and tests
+## Source and testing
 
-- `engine/engine.py`: Python statistical engine, explicit functions and arguments.
-- `src/examples.js`: synthetic teaching examples and explanations.
-- `src/main.js`: current editable data grid and workflow.
-- `src/projects.js`: file access, immutable records, human-readable reports.
-- `src/charts.js`: graph rendering and vector export.
-- `tests/test_engine.py`: initial reference-value smoke tests, **not** comprehensive statistical validation.
+- `engine/engine.py`: backwards-compatible one-way engine and dispatcher.
+- `engine/families.py`: method-specific calculations using SciPy/statsmodels.
+- `src/families.js`: long-format data schema and validation.
+- `src/plots-special.js`: scientific plots and SVG export-compatible Plotly traces.
+- `src/main.js`: editable table, results, project controls and interactions.
+- `src/projects.js`: frozen records and reports.
+- `tests/test_engine.py`, `tests/test_comparisons.py`, `tests/test_families.py`: numerical regression tests.
+- `tests/browser_families.py`: browser-interface smoke test with Plotly/Pyodide stubs; requires Playwright and Chromium locally. This is **not** a full CDN/Pyodide integration test.
 
-Local Python check: `PYTHONPATH=. pytest -q tests/`. Local web check: run `python -m http.server 8000` at repository root and open `http://localhost:8000` in Chrome. GitHub Pages publishes the `main` branch root.
-
-
-### v0.3 comparisons and annotations
-
-The analysis panel displays a pairwise comparison matrix for independent multi-group comparisons and single t tests. Ordinary one-way ANOVA uses statsmodels Tukey HSD (familywise adjusted). Welch ANOVA uses independent pairwise Welch tests with Holm correction over **all** pairs. Kruskal–Wallis uses independent pairwise Mann–Whitney U tests with Holm correction (not Dunn's). Single-group-pair t tests show the primary P value unchanged. Display options select brackets without changing the adjustment family; all results and graph settings are saved in the frozen report. At most fifteen brackets are displayed in one figure to avoid unreadable plots. Other analysis families remain unimplemented and are disabled in the selector.
+Local Python check: `PYTHONPATH=. pytest -q tests/`. Static web check: run `python -m http.server 8000` at repository root, then open `http://localhost:8000` in Chrome.

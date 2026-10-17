@@ -15,7 +15,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><span class="brand-mark">β</span><div><strong>BioStats</strong><small>Scientific analysis studio</small></div></div>
-    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.3.0 · Prototype</span></div>
+    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.4.0 · Prototype</span></div>
   </header>
   <div class="workspace">
     <aside class="sidebar">
@@ -45,7 +45,7 @@
       <section class="panel" id="method-section">
         <div class="panel-head"><div><span class="step">01</span><h2>Choose statistical analysis</h2><p>Your method controls table structure and available teaching examples.</p></div><span class="light-badge">Group comparisons · v0.3</span></div>
         <div class="two-col">
-          <div class="field"><label for="analysis-family">Analysis family</label><select id="analysis-family"><option>One measurement across groups</option><option disabled>Time course / repeated measures (planned)</option><option disabled>Two-factor designs (planned)</option><option disabled>Survival analysis (planned)</option><option disabled>Dose–response / IC50 (planned)</option></select></div>
+          <div class="field"><label for="analysis-family">Analysis family</label><select id="analysis-family"><option value="groups">One measurement across groups</option><option value="time">Time course / repeated measures</option><option value="factorial">Two-factor designs</option><option value="survival">Survival analysis</option><option value="dose">Dose–response / IC50</option></select></div>
           <div class="field"><label for="test-select">Statistical test</label><select id="test-select"><option value="anova">Ordinary one-way ANOVA + Tukey HSD</option><option value="welch_anova">Welch ANOVA + pairwise Welch / Holm</option><option value="kruskal">Kruskal–Wallis + pairwise Mann–Whitney / Holm</option><option value="ttest">Student's unpaired t test (two groups)</option><option value="welch_ttest">Welch's unpaired t test (two groups)</option><option value="paired_ttest">Paired t test (matched rows)</option></select></div>
         </div>
         <div class="two-col">
@@ -95,7 +95,7 @@
           <div class="field"><label for="annotation-mode">Significance brackets</label><select id="annotation-mode"><option value="none">None</option><option value="control">Compare each group against first group</option><option value="all">All pairs (max 15 on graph)</option><option value="custom">Only checked pairs in comparison matrix</option></select></div>
           <div class="field"><label for="annotation-format">Bracket label</label><select id="annotation-format"><option value="stars">Asterisks (*, **, ***, ****; ns)</option><option value="p">Numerical adjusted P value</option><option value="raw">Raw (unadjusted) P, where defined</option></select></div>
         </div>
-        <p class="hint">Brackets appear after running statistics, never before. Asterisks and numerical labels use multiplicity-adjusted P values where applicable. For a single t test, the reported P value is unadjusted. Raw pairwise P values, if available, do not control the multiple-comparison false-positive rate.</p>
+        <p class="hint" id="annotation-description">Brackets appear after running statistics, never before. Asterisks and numerical labels use multiplicity-adjusted P values where applicable. For a single t test, the reported P value is unadjusted. Raw pairwise P values, if available, do not control the multiple-comparison false-positive rate.</p>
         <p id="annotation-warning" role="status" class="hint"></p>
         <div class="plot-container"><div id="plot" aria-label="Editable scientific figure" role="img"></div></div>
         <div class="inline-actions wrap"><button id="export-svg" class="btn btn-primary">Export SVG vector</button><button id="export-png" class="btn btn-soft">Export PNG</button><button id="print-pdf" class="btn btn-soft">Print / Save vector PDF</button><span class="muted xsmall">SVG works well in Illustrator and Inkscape. Save as PDF through Chrome's print dialog.</span></div>
@@ -107,7 +107,7 @@
         <div id="saved-analyses" class="saved-list"><p class="muted">Create or open a project folder to save analyses.</p></div>
         <p class="hint">Each saved analysis preserves the test output, reproducibility report, graph settings, frozen SVG, and Python package versions. Numerical values can optionally be omitted, but that limits exact reproducibility. Loading historical entries only views the saved records.</p>
       </section>
-      <footer class="footer">BioStats v0.3.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
+      <footer class="footer">BioStats v0.4.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
     </main>
   </div>
 </div>

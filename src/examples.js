@@ -53,6 +53,15 @@ export const examples = [
    rationale:'The alternative is mean(Before − After) < 0. Paired data require a complete before/after measurement for each included subject.',
    csv:'Subject ID,Before,After\nMouse01,28,33\nMouse02,29,37\nMouse03,31,35\nMouse04,27,34\nMouse05,30,38'},
 ];
+
+// Long-format examples with explicitly named experimental units.
+examples.push(
+ {id:'time_independent_demo',test:'time_independent',title:'Independent groups at each time point',summary:'Different mice are sampled at each time, not measured repeatedly.',rationale:'Balanced independent group × time ANOVA models treatment, time, and their interaction. Every row is a separate biological sample.',csv:'Group,Time,Value\n'+['Control','Treatment'].flatMap((g,k)=>[0,1,2].flatMap(t=>[0,1,2].map(i=>`${g},${t},${(10+3*t+5*k*t+[-1,0,1][i]).toFixed(1)}`))).join('\n')},
+ {id:'time_repeated_demo',test:'time_repeated',title:'Matched animals measured repeatedly',summary:'The same four mice are followed at three time points.',rationale:'The one-cohort repeated-measures ANOVA uses subject identity to model the within-animal time effect. It does not compare different treatment groups.',csv:'Subject ID,Time,Value\n'+[1,2,3,4].flatMap(i=>[0,1,2].map(t=>`Mouse${i},${t},${(20+2*i+t*(3+i*.3)).toFixed(2)}`)).join('\n')},
+ {id:'factorial_demo',test:'two_factor',title:'Two drugs × two doses (independent samples)',summary:'Balanced 2×2 independent design with three biological replicates per cell.',rationale:'The model reports factor A, factor B, and interaction. It assumes independently sampled biological replicates in each of the four cells.',csv:'Factor A,Factor B,Value\n'+['Vehicle','Drug'].flatMap((a,i)=>['Low','High'].flatMap((b,j)=>[0,1,2].map(k=>`${a},${b},${(20+5*i+3*j+7*i*j+[-1,0,1][k]).toFixed(1)}`))).join('\n')},
+ {id:'survival_demo',test:'survival_logrank',title:'Mouse tumor survival (three groups)',summary:'Each animal has one follow-up time and a 0/1 event indicator.',rationale:'1 means the survival endpoint occurred; 0 means censored. Kaplan–Meier and log-rank methods retain censored animals in the risk set until last contact.',csv:'Subject ID,Group,Time,Event (1=event; 0=censored)\n'+['Control','Drug A','Drug B'].flatMap((g,i)=>[0,1,2,3,4,5].map(j=>`${g.slice(0,1)}${i}-${j+1},${g},${(j+1)*3+i*5},${j===5?0:1}`)).join('\n')},
+ {id:'dose_demo',test:'dose_4pl',title:'Six-dose response with technical triplicates',summary:'Synthetic decreasing sigmoidal concentration–response curve.',rationale:'Relative IC50 is the halfway point of the fitted top/bottom plateau; it is not a hypothesis-test P value. Doses must be strictly positive and span the transition.',csv:'Group,Dose,Response\n'+[0.01,0.03,0.1,0.3,1,3,10,30].flatMap(d=>[-1,0,1].map(e=>`Drug A,${d},${(10+90/(1+d/0.8)+e*.8).toFixed(3)}`)).join('\n')}
+);
 export const examplesFor = test => examples.filter(e => e.test === test);
 export const isPairedTest = test => test === 'paired_ttest';
 export const isTTest = test => ['ttest','welch_ttest','paired_ttest'].includes(test);
