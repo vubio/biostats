@@ -1,5 +1,5 @@
-export const APP_VERSION = '0.1.0';
-export const PROJECT_SCHEMA_VERSION = '1.0.0';
+export const APP_VERSION = '0.2.0';
+export const PROJECT_SCHEMA_VERSION = '1.1.0';
 let folder = null;
 let project = null;
 
@@ -55,37 +55,29 @@ export async function loadRecord(id){
   const svg=await fileRead(dir,'figure.svg');
   return {analysis,svg};
 }
-export async function saveNewRecord({groups,settings,result,svg,description,dataCsv,sha256}){
+export async function saveNewRecord({record,svg,processedCsv}){
   if(!folder||!project)throw new Error('Create or open a local project first.');
-  // Create a new unique ID: never overwrite a prior analysis.
   const id=`analysis_${new Date().toISOString().replace(/[:.]/g,'-')}_${crypto.randomUUID().slice(0,8)}`;
-  const name=(description.name||'Untitled experiment').trim();
+  const name=(record.dataset.name||'Untitled experiment').trim();
   const date=now();
-  const root=await subdir(folder,'Analyses');
-  const dir=await subdir(root,id);
-  const record={
-    schema_version:PROJECT_SCHEMA_VERSION,
-    id,created_at:date,
-    dataset:{name,note:description.note||'',groups,sha256},
-    statistics:result,
-    graph:{settings,renderer:'Plotly.js',renderer_version:'3.7.0'},
-    software:{name:'BioStats',version:APP_VERSION,source_page:location.origin+location.pathname,
-      runtime:'Pyodide 0.28.3',source_git_tag:'v0.1.0 (tag when released)'},
-    immutable:true
-  };
-  const report=makeReport(record);
-  // Save all analysis artifacts before adding the entry to the project index.
-  await write(dir,'analysis.json',JSON.stringify(record,null,2));
+  const dir=await subdir(await subdir(folder,'Analyses'),id);
+  const snapshot={...record,id,created_at:date,immutable:true};
+  const report=makeReport(snapshot);
+  // Save artifacts before modifying project.json, which indexes successfully archived analyses.
+  await write(dir,'analysis.json',JSON.stringify(snapshot,null,2));
   await write(dir,'figure.svg',svg);
   await write(dir,'report.html',report);
-  await write(dir,'input.csv',dataCsv);
-  await write(await subdir(folder,'Data'),`${id}.csv`,dataCsv);
+  if(processedCsv!=null){
+    await write(dir,'input.csv',processedCsv);
+    await write(await subdir(folder,'Data'),`${id}.csv`,processedCsv);
+  }
   await write(await subdir(folder,'Figures'),`${id}.svg`,svg);
   await write(await subdir(folder,'Reports'),`${id}.html`,report);
-  const newIndex={...project,analyses:[...(project.analyses||[]),{id,name,date,test:result.label,p_value:result.p_value,app_version:APP_VERSION}]};
-  await write(folder,'project.json',JSON.stringify(newIndex,null,2));
-  project=newIndex;
-  return record;
+  const updated={...project,analyses:[...project.analyses,{id,name,date,test:record.statistics.label,
+    p_value:record.statistics.p_value,app_version:APP_VERSION}]};
+  await write(folder,'project.json',JSON.stringify(updated,null,2));
+  project=updated;
+  return snapshot;
 }
 
 export function escapeHtml(x){return String(x==null?'':x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -95,5 +87,34 @@ export function makeReport(record){
   const df=(r.df||[]).map(x=>Number(x).toPrecision(5)).join(', ');
   const rows=r.group_summaries.map(g=>`<tr><td>${escapeHtml(g.group)}</td><td>${g.n}</td><td>${g.mean.toPrecision(6)}</td><td>${g.sd.toPrecision(6)}</td><td>${g.sem.toPrecision(6)}</td></tr>`).join('');
   const comparisonRows=r.posthoc?.comparisons?.length?`<h2>Post hoc — Tukey HSD</h2><table><thead><tr><th>Group 1</th><th>Group 2</th><th>Difference (group 2 − group 1)</th><th>Adjusted P</th><th>${Math.round((1-r.alpha)*100)}% CI</th></tr></thead><tbody>${r.posthoc.comparisons.map(c=>`<tr><td>${escapeHtml(c.group1)}</td><td>${escapeHtml(c.group2)}</td><td>${c.difference.toPrecision(6)}</td><td>${formatP(c.p_adjusted)}</td><td>${c.ci_low.toPrecision(5)} to ${c.ci_high.toPrecision(5)}</td></tr>`).join('')}</tbody></table>`:'';
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>BioStats analysis report - ${escapeHtml(ds.name)}</title><style>body{font:14px/1.65 Arial,sans-serif;color:#203243;max-width:900px;margin:50px auto;padding:0 28px}header{border-bottom:2px solid #137b7b}h1{font-size:26px}h2{margin-top:28px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #dce3e8;text-align:left}th{background:#eef5f6}code{background:#f1f5f9;padding:2px 5px}small{color:#58717a}section{margin-top:16px}b{color:#137b7b}</style></head><body><header><h1>BioStats — Statistical analysis report</h1><p>${escapeHtml(ds.name)} · ${escapeHtml(record.created_at)}</p></header><section><h2>Original analysis (preserved)</h2><p><strong>${escapeHtml(r.label)}</strong><br>Statistic: <b>${r.statistic.toPrecision(7)}</b> · degrees of freedom: ${escapeHtml(df)} · P = <b>${formatP(r.p_value)}</b> · alpha = ${r.alpha}</p><p>${escapeHtml(ds.note)}</p></section><h2>Input data summary</h2><table><thead><tr><th>Group</th><th>n</th><th>Mean</th><th>SD</th><th>SEM</th></tr></thead><tbody>${rows}</tbody></table>${comparisonRows}<section><h2>Reproducibility information</h2><p>BioStats ${escapeHtml(record.software.version)} · Pyodide ${escapeHtml(record.software.runtime)}<br>Python packages: ${escapeHtml(JSON.stringify(r.engine.python_packages))}<br>Statistical function: <code>${escapeHtml(r.engine.primary_function)}</code><br>Function arguments: <code>${escapeHtml(JSON.stringify(r.engine.primary_arguments))}</code><br>Post hoc function: ${escapeHtml(r.engine.posthoc_function||'None')}<br>Post hoc arguments: ${escapeHtml(JSON.stringify(r.engine.posthoc_arguments||{}))}</p><p>Input fingerprint (SHA-256): <code>${escapeHtml(ds.sha256)}</code><br>Saved numeric data: input.csv and in analysis.json<br>Plot renderer: ${escapeHtml(record.graph.renderer)} ${escapeHtml(record.graph.renderer_version)}<br>Project schema: ${escapeHtml(record.schema_version)}<br>Software source URL at time of save: ${escapeHtml(record.software.source_page)}</p></section><section><h2>Interpretation and limitations</h2><p>${escapeHtml(r.limitations)}</p><p>This report documents how the test was computed; it does not establish that assumptions or experimental design are appropriate. The researcher must verify independent biological replicates, experimental units, planned comparisons, and data-quality procedures.</p><small>Original numerical results should not be silently replaced by later BioStats releases. Reanalysis must generate a new revision.</small></section></body></html>`;
+  const source=ds.source||{};
+  const valuesStored=ds.processed_values_stored??Boolean(ds.groups);
+  const kind=source.kind||'legacy';
+  const sourceStatus=kind==='import'
+    ?(source.modified_after_import?'YES — imported measurements were edited in BioStats.':'NO — imported measurements were not edited in BioStats.')
+    :kind==='example'?(source.modified_after_example?'Example values edited.':'Unmodified synthetic example dataset.')
+    :'Direct entry / legacy analysis; there is no verified external import baseline.';
+  const originalMeta=kind==='import'?`<p><strong>Original imported file:</strong> ${escapeHtml(source.filename||'Unknown')}<br>Size: ${escapeHtml(source.bytes)} bytes<br>Last modified: ${escapeHtml(source.last_modified||'Unknown')}<br>Excel sheet: ${escapeHtml(source.sheet_name||'Not applicable')}<br>Original file SHA-256: <code>${escapeHtml(source.file_sha256||'Unavailable')}</code></p>`:'';
+  const savedText=valuesStored?'YES — input.csv in the saved project (plus numeric summaries).':'NO — only frozen results, summaries, input hash and source metadata were retained. Independent recalculation may not be possible.';
+  const inputHash=ds.processed_sha256||ds.sha256||'Not available';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>BioStats statistical report — ${escapeHtml(ds.name)}</title><style>body{font:14px/1.6 Arial,sans-serif;color:#213546;max-width:900px;margin:45px auto;padding:0 25px}header{border-bottom:2px solid #137b7b}h1{font-size:26px}h2{margin-top:28px}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #dce3e8;text-align:left}th{background:#eef5f6}code{overflow-wrap:anywhere;background:#f1f5f9;padding:2px 5px}small{color:#58717a}section{margin-top:17px}b{color:#137b7b}</style></head><body>
+    <header><h1>BioStats — Statistical analysis report</h1><p>${escapeHtml(ds.name)} · ${escapeHtml(record.created_at)}</p></header>
+    <section><h2>Frozen original result</h2><p><strong>${escapeHtml(r.label)}</strong><br>Statistic: <b>${r.statistic.toPrecision(7)}</b> · df: ${escapeHtml(df)} · P = <b>${formatP(r.p_value)}</b> · alpha = ${r.alpha}${r.alternative&&r.test_id?.includes('ttest')?' · alternative: '+escapeHtml(r.alternative):''}</p><p>${escapeHtml(ds.note)}</p></section>
+    <h2>Group summaries</h2><table><thead><tr><th>Group</th><th>n</th><th>Mean</th><th>SD</th><th>SEM</th></tr></thead><tbody>${rows}</tbody></table>${comparisonRows}
+    <section><h2>Data provenance and exact inputs</h2>
+    <p>Source category: <strong>${escapeHtml(kind)}</strong><br>Edited compared with original imported values? <strong>${escapeHtml(sourceStatus)}</strong><br>Original imported file modified by BioStats? <strong>No. The program reads a copy and does not write to the imported file.</strong></p>
+    ${originalMeta}<p>Analyzed numerical values included in project? <strong>${savedText}</strong></p>
+    <p>SHA-256 of the exact CSV table sent to the analysis engine: <code>${escapeHtml(inputHash)}</code></p>
+    <p><small>The input fingerprint detects differences when values are available; it cannot reconstruct missing numerical values. For imported Excel files, SHA-256 of the original file and of the processed numerical table are deliberately different quantities.</small></p></section>
+    <section><h2>Reproducibility: Python statistical calculation</h2><p>BioStats ${escapeHtml(record.software.version)} · ${escapeHtml(record.software.runtime)}<br>
+    Python package versions: <code>${escapeHtml(JSON.stringify(r.engine.python_packages))}</code><br>
+    Function: <code>${escapeHtml(r.engine.primary_function)}</code><br>
+    Function arguments: <code>${escapeHtml(JSON.stringify(r.engine.primary_arguments))}</code><br>
+    Post hoc function: ${escapeHtml(r.engine.posthoc_function||'None')}<br>
+    Post hoc arguments: <code>${escapeHtml(JSON.stringify(r.engine.posthoc_arguments||{}))}</code><br>
+    Graph renderer: ${escapeHtml(record.graph.renderer)} ${escapeHtml(record.graph.renderer_version)} · Project schema: ${escapeHtml(record.schema_version)}<br>
+    Software source URL at time of save: ${escapeHtml(record.software.source_page)}</p></section>
+    <section><h2>Interpretation and limitations</h2><p>${escapeHtml(r.limitations)}</p>
+    <p>The report documents the test implementation, not whether its assumptions were met. Verify experimental units, planned comparisons and source measurements before using the results in research.</p>
+    <small>Analysis results are a frozen record. Software updates must not silently recalculate it. If reanalysis is requested, save a new record.</small></section></body></html>`;
 }

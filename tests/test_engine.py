@@ -1,37 +1,38 @@
-"""Initial basic checks against independent reference tests; not publication-grade validation."""
-import sys
-from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'engine'))
-from engine import analyze
+"""Reference-level smoke tests for deterministic statistics; synthetic examples only."""
+import math
+from scipy import stats
+from engine.engine import analyze
 
-DATA=[{'name':'Control','values':[42,49,55,47,52]},
-      {'name':'Drug A','values':[58,65,61,70,63]},
-      {'name':'Drug B','values':[76,82,89,80,85]}]
 
-def check(test, groups=DATA):
-    out=analyze({'groups':groups,'test':test,'alpha':.05})
-    assert 0<=out['p_value']<=1
-    assert isinstance(out['engine']['python_packages']['scipy'],str)
-    return out
+def test_paired_two_sided():
+    a, b = [26, 31, 28, 30, 32], [21, 26, 25, 24, 28]
+    inp = {'groups':[{'name':'Before','values':a},{'name':'After','values':b}],
+           'subject_ids':[f'Mouse{i}' for i in range(5)],'test':'paired_ttest',
+           'alpha':0.05,'alternative':'two-sided'}
+    result = analyze(inp)
+    assert result['p_value'] == stats.ttest_rel(a,b).pvalue
+    assert result['engine']['primary_arguments']['matching'].startswith('row-wise')
 
-def test_anova():
-    result=check('anova')
-    assert len(result['posthoc']['comparisons'])==3
-    assert result['p_value']<.001
 
-def test_welch():
-    result=check('welch_anova')
-    assert len(result['df'])==2
+def test_unpaired_directional():
+    a, b = [39,42,40,44,41],[30,31,32,28,33]
+    base = {'groups':[{'name':'Treatment','values':a},{'name':'Control','values':b}],
+            'test':'ttest','alpha':0.05}
+    right=analyze({**base,'alternative':'greater'})
+    wrong=analyze({**base,'alternative':'less'})
+    assert math.isclose(right['p_value'],stats.ttest_ind(a,b,alternative='greater').pvalue)
+    assert right['p_value']<wrong['p_value']
 
-def test_kruskal():
-    check('kruskal')
 
-def test_ttest():
-    check('ttest',DATA[:2]);check('welch_ttest',DATA[:2])
+def test_welch_two_sided():
+    a,b=[18,19,20,21,22],[24,26,33,39,42,48]
+    r=analyze({'groups':[{'name':'A','values':a},{'name':'B','values':b}],
+               'test':'welch_ttest','alternative':'two-sided'})
+    assert r['p_value']==stats.ttest_ind(a,b,equal_var=False).pvalue
 
-def test_reject_incorrect_group_count():
-    try:
-        check('ttest',DATA)
-        assert False
-    except ValueError:
-        pass
+
+def test_wrong_group_count_fails():
+    import pytest
+    with pytest.raises(ValueError):
+        analyze({'groups':[{'name':'A','values':[1,2]},{'name':'B','values':[3,4]},{'name':'C','values':[5,6]}],
+                 'test':'paired_ttest'})

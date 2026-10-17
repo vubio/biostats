@@ -15,7 +15,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><span class="brand-mark">β</span><div><strong>BioStats</strong><small>Scientific analysis studio</small></div></div>
-    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.1.0 · Prototype</span></div>
+    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.2.0 · Prototype</span></div>
   </header>
   <div class="workspace">
     <aside class="sidebar">
@@ -29,35 +29,52 @@
       <div class="sidebar-divider"></div>
       <p class="eyebrow">WORKFLOW</p>
       <nav class="navlist" aria-label="Workflow sections">
-        <a href="#data-section" class="nav-link">01 <span>Import &amp; review data</span></a>
-        <a href="#analysis-section" class="nav-link">02 <span>Statistical analysis</span></a>
-        <a href="#figure-section" class="nav-link">03 <span>Graph editor</span></a>
-        <a href="#project-section" class="nav-link">04 <span>Saved analyses</span></a>
+        <a href="#method-section" class="nav-link">01 <span>Choose analysis</span></a>
+        <a href="#data-section" class="nav-link">02 <span>Enter &amp; edit data</span></a>
+        <a href="#analysis-section" class="nav-link">03 <span>Run statistics</span></a>
+        <a href="#figure-section" class="nav-link">04 <span>Graph editor</span></a>
+        <a href="#project-section" class="nav-link">05 <span>Saved analyses</span></a>
       </nav>
       <div class="sidebar-divider"></div>
       <p class="side-note"><strong>Private by design.</strong> Selected numerical data are processed in your browser. This prototype does not send analysis values to GitHub.</p>
       <p class="side-note">Use synthetic or non-sensitive data while we validate the application.</p>
     </aside>
     <main class="main-content">
-      <div class="heading-row"><div><p class="eyebrow">ANALYSIS WORKSPACE</p><h1>Group comparisons</h1><p class="subhead">One continuous measurement across independent experimental groups.</p></div><button id="load-example" class="btn btn-soft">Load example data</button></div>
+      <div class="heading-row"><div><p class="eyebrow">ANALYSIS WORKSPACE</p><h1>Statistical workspace</h1><p class="subhead">Choose a method first, then work in its matching data table.</p></div></div>
       <div id="message" role="status" aria-live="polite" class="message" hidden></div>
+      <section class="panel" id="method-section">
+        <div class="panel-head"><div><span class="step">01</span><h2>Choose statistical analysis</h2><p>Your method controls table structure and available teaching examples.</p></div><span class="light-badge">Group comparisons · v0.2</span></div>
+        <div class="two-col">
+          <div class="field"><label for="analysis-family">Analysis family</label><select id="analysis-family"><option>One measurement across groups</option><option disabled>Time course / repeated measures (planned)</option><option disabled>Two-factor designs (planned)</option><option disabled>Survival analysis (planned)</option><option disabled>Dose–response / IC50 (planned)</option></select></div>
+          <div class="field"><label for="test-select">Statistical test</label><select id="test-select"><option value="anova">Ordinary one-way ANOVA + Tukey</option><option value="welch_anova">Welch's one-way ANOVA (no post hoc yet)</option><option value="kruskal">Kruskal–Wallis (no post hoc yet)</option><option value="ttest">Student's unpaired t test (two groups)</option><option value="welch_ttest">Welch's unpaired t test (two groups)</option><option value="paired_ttest">Paired t test (matched rows)</option></select></div>
+        </div>
+        <div class="two-col">
+          <div class="field" id="alternative-field"><label for="alternative">Alternative hypothesis (first − second)</label><select id="alternative"><option value="two-sided">Two-sided (different in either direction)</option><option value="greater">One-sided: first group &gt; second</option><option value="less">One-sided: first group &lt; second</option></select></div>
+          <div class="field"><label for="alpha">Significance level</label><select id="alpha"><option value="0.05">α = 0.05</option><option value="0.01">α = 0.01</option></select></div>
+        </div>
+        <div class="example-box">
+          <div class="example-row"><div class="field example-select"><label for="example-select">Teaching example</label><select id="example-select"></select></div><button id="example-info-btn" class="btn btn-soft info-button" type="button" title="Explain the experimental design and choice of test" aria-expanded="false" aria-controls="example-info">ⓘ Why this example?</button><button id="load-example" class="btn btn-primary" type="button">Load example</button></div>
+          <div id="example-info" class="example-info" hidden></div>
+        </div>
+        <p id="template-hint" class="hint"></p>
+        <p class="hint">Select tests based on experimental design and pre-specified hypotheses, never by hunting for the smallest P value. Directional alternatives require justification before observing the results.</p>
+      </section>
       <section class="panel" id="data-section">
-        <div class="panel-head"><div><span class="step">01</span><h2>Data table</h2><p>One group per column. Rows are individual biological replicates.</p></div><label class="file-control btn btn-soft">Import CSV / XLSX<input type="file" id="data-file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden></label></div>
-        <div class="two-col"><div class="field"><label for="dataset-name">Dataset name</label><input id="dataset-name" value="Untitled experiment" maxlength="100"></div><div class="field"><label for="data-sheet">Data source / note (optional)</label><input id="data-sheet" placeholder="e.g., 3 mice per group; plasma cholesterol"></div></div>
-        <label for="data-input" class="field-label">Paste an Excel table, including the group headers</label>
-        <textarea id="data-input" spellcheck="false" placeholder="Control,Drug A,Drug B&#10;42,62,80&#10;47,61,85&#10;51,69,91"></textarea>
-        <div class="inline-actions"><button id="apply-data" class="btn btn-primary">Update data preview</button><span class="muted xsmall">Blank cells are ignored. Non-numeric measurements are rejected.</span></div>
-        <div id="data-preview" class="data-preview">No data loaded.</div>
+        <div class="panel-head"><div><span class="step">02</span><h2>Enter or edit data</h2><p>Type directly into the cells, or import and modify any of the values.</p></div><label class="file-control btn btn-soft">Import CSV / XLSX<input type="file" id="data-file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden></label></div>
+        <div class="two-col"><div class="field"><label for="dataset-name">Dataset name</label><input id="dataset-name" value="Untitled experiment" maxlength="100"></div><div class="field"><label for="data-sheet">Data source / note (optional)</label><input id="data-sheet" placeholder="e.g., 3 independent mice per treatment"></div></div>
+        <div class="inline-actions wrap"><button id="blank-table" class="btn btn-primary" type="button">Create blank table</button><button id="add-row" class="btn btn-soft" type="button">＋ Add row</button><button id="add-group" class="btn btn-soft" type="button">＋ Add group</button><button id="remove-row" class="btn btn-soft" type="button">Remove last row</button><span id="edit-state" class="muted xsmall"></span></div>
+        <p class="hint">All visible cells are editable. Paste a rectangular selection from Excel into any cell. For larger files, use the page navigation to edit additional rows.</p>
+        <div id="data-preview" class="data-preview"><p class="hint">Select a method and click “Create blank table,” “Load example,” or import a file.</p></div>
+        <div id="table-navigation" class="table-navigation" hidden><button id="prev-page" class="btn btn-soft" type="button">← Previous 50</button><span id="page-info" class="muted xsmall"></span><button id="next-page" class="btn btn-soft" type="button">Next 50 →</button></div>
+        <details class="paste-panel"><summary>Paste or replace an entire CSV/Excel-style table</summary><label for="data-input" class="field-label">Headers in the first row; tab- or comma-separated. This replaces the current table.</label><textarea id="data-input" spellcheck="false" placeholder="Control,Drug A,Drug B&#10;42,62,80&#10;47,61,85&#10;51,69,91"></textarea><div class="inline-actions"><button id="apply-data" class="btn btn-soft" type="button">Replace table with pasted values</button></div></details>
       </section>
       <section class="panel" id="analysis-section">
-        <div class="panel-head"><div><span class="step">02</span><h2>Statistics</h2><p>Explicit test selection; no AI-generated P values.</p></div><span class="light-badge">Independent groups only · v0.1</span></div>
-        <div class="two-col"><div class="field"><label for="test-select">Statistical test</label><select id="test-select"><option value="anova">Ordinary one-way ANOVA + Tukey</option><option value="welch_anova">Welch's one-way ANOVA (no post hoc yet)</option><option value="kruskal">Kruskal–Wallis (no post hoc yet)</option><option value="ttest">Student's unpaired t test (2 groups)</option><option value="welch_ttest">Welch's unpaired t test (2 groups)</option></select></div><div class="field"><label for="alpha">Significance level</label><select id="alpha"><option value="0.05">α = 0.05</option><option value="0.01">α = 0.01</option></select></div></div>
-        <p class="hint">Choose tests based on design and assumptions, not on which produces the smallest P value. This version does not handle matched/repeated measures or nested observations.</p>
+        <div class="panel-head"><div><span class="step">03</span><h2>Run statistics</h2><p>Uses the current edited numerical table, not the original imported values.</p></div><span class="light-badge">SciPy / statsmodels</span></div>
         <div class="inline-actions"><button id="run-stats" class="btn btn-primary">Run statistical analysis</button><span id="analysis-running" class="muted xsmall"></span></div>
-        <div id="analysis-results" class="results-placeholder">Run an analysis to see test statistics, group summaries, package versions, and P values.</div>
+        <div id="analysis-results" class="results-placeholder">Run an analysis to see statistics, group summaries, library versions, and P values.</div>
       </section>
       <section class="panel" id="figure-section">
-        <div class="panel-head"><div><span class="step">03</span><h2>Figure editor</h2><p>Live controls. Export actual SVG vectors, not a screenshot.</p></div><span class="light-badge">Plotly SVG traces</span></div>
+        <div class="panel-head"><div><span class="step">04</span><h2>Figure editor</h2><p>Live controls. Export actual SVG vectors, not a screenshot.</p></div><span class="light-badge">Plotly SVG traces</span></div>
         <div class="graph-controls">
           <div class="field"><label for="plot-type">Graph type</label><select id="plot-type"><option value="dots">Individual values + mean</option><option value="bar">Mean + individual values</option><option value="box">Box + individual values</option></select></div>
           <div class="field"><label for="error-type">Error bars</label><select id="error-type"><option value="sd">Standard deviation (SD)</option><option value="sem">Standard error (SEM)</option><option value="none">None</option></select></div>
@@ -72,12 +89,13 @@
         <div class="inline-actions wrap"><button id="export-svg" class="btn btn-primary">Export SVG vector</button><button id="export-png" class="btn btn-soft">Export PNG</button><button id="print-pdf" class="btn btn-soft">Print / Save vector PDF</button><span class="muted xsmall">SVG works well in Illustrator and Inkscape. Save as PDF through Chrome's print dialog.</span></div>
       </section>
       <section class="panel" id="project-section">
-        <div class="panel-head"><div><span class="step">04</span><h2>Project history</h2><p>Saved analyses do not get recalculated when software changes.</p></div></div>
+        <div class="panel-head"><div><span class="step">05</span><h2>Project history</h2><p>Saved analyses do not get recalculated when software changes.</p></div></div>
+        <div class="export-preferences"><label class="check-row"><input id="store-values" type="checkbox" checked> Save the exact analyzed numerical values alongside the report and figure (recommended)</label><p id="storage-warning" class="hint">Uncheck for very large datasets. The project will retain statistics, an input fingerprint, original source-file metadata, and an unchanged/edited flag, but may not be independently recalculable.</p></div>
         <div class="inline-actions"><button id="save-analysis" class="btn btn-primary">Save analysis + figure to project</button><button id="download-report" class="btn btn-soft">Download HTML report</button></div>
         <div id="saved-analyses" class="saved-list"><p class="muted">Create or open a project folder to save analyses.</p></div>
-        <p class="hint">Each saved analysis contains its original numerical inputs, test output, a human-readable report, graph settings, frozen SVG, and the versions of its computational libraries. Loading historical entries only views the saved records.</p>
+        <p class="hint">Each saved analysis preserves the test output, reproducibility report, graph settings, frozen SVG, and Python package versions. Numerical values can optionally be omitted, but that limits exact reproducibility. Loading historical entries only views the saved records.</p>
       </section>
-      <footer class="footer">BioStats v0.1.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
+      <footer class="footer">BioStats v0.2.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
     </main>
   </div>
 </div>

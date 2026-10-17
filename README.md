@@ -1,76 +1,53 @@
-# BioStats · v0.1.0 (prototype)
+# BioStats · v0.2.0 — experimental prototype
 
-An open-source, browser-first biomedical statistics workspace. **Early research prototype:** validate against an independently verified program before using results in manuscripts. Current scope: independent groups and one continuous outcome.
+**Live app:** https://vubio.github.io/biostats/  
+**Source:** https://github.com/vubio/biostats
 
-## What works in this first version
+BioStats is a free, browser-first biomedical statistics and vector graphing tool. It is **not validated for manuscript submission**; compare any outputs with independently verified software before scientific use.
 
-- Paste an Excel table with one group per column, or import CSV/TSV/XLS/XLSX (first sheet)
-- Plot individual values, bar + individual values, or box + individual values
-- Graph controls for SD / SEM, palette, axis labels and maximum, title, font size and export width
-- Download **true vector SVG** and PNG; Chrome **Print → Save as PDF** from an SVG figure
-- Run Python scientific tests in Chrome via Pyodide 0.28.3:
-  - Two independent groups: unpaired Student's or Welch's t test
-  - Three or more independent groups: ordinary one-way ANOVA + Tukey HSD, Welch's one-way ANOVA, Kruskal–Wallis
-- See numerical results and exact package/library functions and versions
-- Open/create a local QuPath-style project folder (Chrome desktop, with consent)
-- Save a new, immutable analysis entry containing frozen SVG, analyzed numerical inputs, full statistical JSON, and HTML report
-- Reopen saved records for viewing without recalculation
+## How it works
 
-## Step 1: Create repository
+1. **Choose a statistical method first.** The table structure changes for independent versus paired designs. Time-course, two-way ANOVA, survival and IC50 modules are still planned, not currently available.
+2. **Create a blank editable table**, import CSV/XLS/XLSX or choose a small synthetic teaching example. Every currently supported test has at least one example. The ⓘ explanation describes the design and assumptions; t tests offer two-sided and directional alternatives.
+3. **Edit the imported or entered values** in a spreadsheet-like grid. Supports adding rows/groups, pasting cells from Excel and paginating large tables. Statistical tests always use the current validated numbers; every edit invalidates prior on-screen P values until reanalysis.
+4. **Run calculations** using SciPy/statsmodels through Pyodide. Supported: Student and Welch independent two-group t tests (two-sided, one-sided), paired t test (including two-/one-sided alternatives), ordinary one-way ANOVA with Tukey post hoc, Welch ANOVA (omnibus only), and Kruskal–Wallis (omnibus only).
+5. **Edit and export graphs.** Plotly scatter, bar and box plots with axes, labels, palettes, error bars, SVG vector export, PNG and a browser print-to-PDF option.
+6. **Create or open a local project folder** in desktop Chrome. Save frozen statistical results, an immutable SVG snapshot, graph settings, source/provenance information and HTML methods report. Project files are separate from the online code and from original raw data.
 
-1. Visit <https://github.com/new> and create a **public** repository named `biostats` (add a README if desired).
-2. Option A: Ask ChatGPT to upload this starter app to the repository through its connected GitHub app.
-3. Option B: Unzip this package, select all its contents, and drag them into GitHub's **Add file → Upload files** page. Ensure `index.html`, `styles.css`, `src/` and `engine/` remain at the repository root. Commit changes.
+## Project folder and provenance
 
-## Step 2: Enable GitHub Pages
-
-In your repository, open **Settings → Pages → Build and deployment**. Select **Deploy from a branch**, `main`, `/(root)`, then **Save**. Your app will appear at:
-
-`https://vubio.github.io/biostats/`
-
-It may take time for the website to publish. Check the **Actions** tab for deployment state if needed.
-
-## Step 3: Create your first statistics project
-
-1. On your PC, create an **empty folder**, e.g. `Research/Experiment_A/Statistics_Project/`.
-2. Open the published app in **desktop Chrome** using HTTPS.
-3. Click **New project**, select that folder, and grant Chrome read/write permission.
-4. Click **Load example data**, then **Run statistical analysis**. Python libraries load on first use.
-5. Change graph settings, click **Export SVG vector** to inspect the export.
-6. Click **Save analysis + figure to project**. Find the frozen results under your chosen folder.
-7. Reopen that folder with **Open project folder**; click **View frozen original**.
-
-### Local project folder layout
-
-```text
-Statistics_Project/
-  project.json
-  README.txt
-  Data/             # compact numerical input tables actually analyzed
-  Analyses/         # each timestamped immutable calculation, inputs, SVG, HTML
-  Figures/          # SVG copies for vector editors
-  Reports/          # HTML copies of human-readable statistics reports
-  History/          # reserved for project migrations and revision logs
+```
+Research/Experiment_001/
+├── Raw_Data/                 # Independent originals, never modified by BioStats
+└── Statistics_Project/
+    ├── project.json
+    ├── Data/
+    ├── Analyses/             # timestamped immutable analysis.json + SVG + report
+    ├── Figures/
+    ├── Reports/
+    └── History/
 ```
 
-Original images, instrument files, large raw XLSX files, etc., stay **outside** this project. The project stores the compact numerical input used for statistics so analysis remains reproducible.
+Check **Save the exact analyzed numerical values** to include the real processed table in `input.csv` and `Data/`. This is the default. You can uncheck it for large inputs: no numerical table is archived; the report still records the computed statistics and a SHA-256 fingerprint of the exact processed CSV plus (for imports) filename, byte size, last-modified time, original file SHA-256, and whether the values were edited in the app. If you omit numeric values and no longer have the source data, precise recomputation may be impossible.
 
-## Safety and scientific scope
+**Important:** All original input files are read-only. Historical saved analyses remain frozen; no silent rerun on open. The project format uses a compatible 1.x schema to open project indexes created with BioStats v0.1.0.
 
-- **No publication-grade validation yet.** The included Python tests are initial smoke tests, not comprehensive statistical QA.
-- No repeated-measures, paired, nested, two-way ANOVA, missing-data modeling or survival analyses yet.
-- Ordinary ANOVA uses Tukey's HSD for post hoc tests. Welch and Kruskal–Wallis currently have **no post hoc**; do not interpret overall significance as pairwise significance.
-- The user must assess independent experimental units, biological vs. technical replicates, outliers, variance assumptions, and the comparison plan.
-- Avoid identifiable patient or confidential data in this prototype until its dependency and security strategy has been reviewed. Experiment values are processed in-browser, but the app loads JavaScript/Python runtimes from external pinned CDNs.
-- SVG export uses SVG-based Plotly traces (not WebGL) to retain genuine vector elements.
-- PDF is created using Chrome's print dialog; inspect exported PDFs in your vector editor to confirm expected editability.
-- Existing records are not edited by the app's normal actions. A new analysis always creates a new ID and new report/figure files. Keep regular backups of your local project folder.
-- The app records package versions and statistical function arguments. Exact reanalysis in a future environment may require matching historical dependency versions and rehydrating the original software release. Create Git tags for released versions.
+## Scientific scope and security
 
-## Development notes
+- **Synthetic examples are learning tools, not biomedical evidence.** Do not select significance alternatives or tests based on observed P values; consider experimental units, paired IDs, independence, approximate normality and homogeneity of variances.
+- Matched t tests use a `Subject ID` column with one matched subject per row; incomplete pairs are rejected. The program never matches independent rows automatically.
+- Welch ANOVA and Kruskal–Wallis currently have no implemented post hoc comparisons. It would be incorrect to claim pairwise significance from their omnibus P values.
+- The browser runs Python locally via Pyodide; the app does not upload user-provided measurements to GitHub. Some dependencies are fetched over the network from CDNs; do not input identifiable patient data or confidential source material until a security review and dependency audit have been completed.
+- SVG outputs use true vector Plotly traces. Check fonts and symbol rendering in your vector editor; use PNG only when raster output is explicitly intended.
+- Preserve regular backups of project folders. Historic release archives and versioned web URLs are a planned feature; GitHub commit history alone is not a promise that any old live runtime can be reproduced exactly.
 
-Current structure is deliberately modular: `engine/engine.py` contains the computational functions, `src/stats.js` bridges the Python WebAssembly runtime, `src/charts.js` holds Plotly figure generation/export, `src/projects.js` provides file management and reporting, `src/main.js` contains the UI glue.
+## Source and tests
 
-Dependencies are **pinned** in `index.html` and `src/stats.js`: Plotly.js 3.7.0, XLSX 0.18.5, Pyodide 0.28.3 (with SciPy 1.14.1 and statsmodels 0.14.4). For a true archived release, tag the source commit and archive the exact deployed static build/assets. Future upgrades should never mutate saved analyses.
+- `engine/engine.py`: Python statistical engine, explicit functions and arguments.
+- `src/examples.js`: synthetic teaching examples and explanations.
+- `src/main.js`: current editable data grid and workflow.
+- `src/projects.js`: file access, immutable records, human-readable reports.
+- `src/charts.js`: graph rendering and vector export.
+- `tests/test_engine.py`: initial reference-value smoke tests, **not** comprehensive statistical validation.
 
-For local development, serve this directory over HTTP (`python -m http.server 8000`), visit `http://localhost:8000` in Chrome. `file://` may block module imports or the Python code fetch.
+Local Python check: `PYTHONPATH=. pytest -q tests/`. Local web check: run `python -m http.server 8000` at repository root and open `http://localhost:8000` in Chrome. GitHub Pages publishes the `main` branch root.
