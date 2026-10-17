@@ -10,3 +10,11 @@
 .export-preferences{background:#f8fafb;border:1px solid #e0e7ec;border-radius:9px;padding:13px 15px;margin-bottom:14px}.check-row{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:650}.check-row input{width:auto;flex:none;accent-color:#137b7b}.export-preferences .hint{margin:7px 0 0 25px}
 .frozen-dialog{max-width:min(880px,95vw);max-height:92vh;width:880px;border:1px solid #cbd5e1;border-radius:15px;padding:18px;box-shadow:0 18px 55px #1a2c3b33}
 [hidden]{display:none!important}
+
+/* v0.3: full comparison matrix and annotation settings. */
+.comparison-panel{margin-top:20px;padding:14px 16px;border:1px solid #dce9eb;border-radius:10px;background:#f9fcfc}
+.comparison-heading h3{font-size:15px;margin:0 0 5px}.comparison-heading p{font-size:12px;color:#64748b;margin:0 0 12px;line-height:1.5}
+.comparison-table-wrap{max-height:330px;overflow:auto;margin-top:13px}
+.comparison-controls{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:16px 0 4px;padding:14px;background:#f6fafb;border-radius:9px}
+.comparison-table-wrap table th{position:sticky;top:0;z-index:1}.comparison-table-wrap input[type=checkbox]{width:16px;height:16px;accent-color:#137b7b}
+@media(max-width:680px){.comparison-controls{grid-template-columns:1fr}}

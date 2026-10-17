@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.2.0';
+export const APP_VERSION = '0.3.0';
 export const PROJECT_SCHEMA_VERSION = '1.1.0';
 let folder = null;
 let project = null;
@@ -86,7 +86,7 @@ export function makeReport(record){
   const r=record.statistics,ds=record.dataset;
   const df=(r.df||[]).map(x=>Number(x).toPrecision(5)).join(', ');
   const rows=r.group_summaries.map(g=>`<tr><td>${escapeHtml(g.group)}</td><td>${g.n}</td><td>${g.mean.toPrecision(6)}</td><td>${g.sd.toPrecision(6)}</td><td>${g.sem.toPrecision(6)}</td></tr>`).join('');
-  const comparisonRows=r.posthoc?.comparisons?.length?`<h2>Post hoc — Tukey HSD</h2><table><thead><tr><th>Group 1</th><th>Group 2</th><th>Difference (group 2 − group 1)</th><th>Adjusted P</th><th>${Math.round((1-r.alpha)*100)}% CI</th></tr></thead><tbody>${r.posthoc.comparisons.map(c=>`<tr><td>${escapeHtml(c.group1)}</td><td>${escapeHtml(c.group2)}</td><td>${c.difference.toPrecision(6)}</td><td>${formatP(c.p_adjusted)}</td><td>${c.ci_low.toPrecision(5)} to ${c.ci_high.toPrecision(5)}</td></tr>`).join('')}</tbody></table>`:'';
+  const comparisonRows=r.posthoc?.comparisons?.length?`<h2>Pairwise comparisons — ${escapeHtml(r.posthoc.method)}</h2><table><thead><tr><th>Group 1</th><th>Group 2</th><th>Difference (group 2 − group 1)</th><th>Raw P (where available)</th><th>Adjusted P</th><th>${Math.round((1-r.alpha)*100)}% CI</th></tr></thead><tbody>${r.posthoc.comparisons.map(c=>`<tr><td>${escapeHtml(c.group1)}</td><td>${escapeHtml(c.group2)}</td><td>${c.difference.toPrecision(6)}</td><td>${c.p_raw==null?'—':formatP(c.p_raw)}</td><td>${formatP(c.p_adjusted)}</td><td>${c.ci_low==null?'Not calculated':c.ci_low.toPrecision(5)+' to '+c.ci_high.toPrecision(5)}</td></tr>`).join('')}</tbody></table>`:'';
   const source=ds.source||{};
   const valuesStored=ds.processed_values_stored??Boolean(ds.groups);
   const kind=source.kind||'legacy';
@@ -115,6 +115,7 @@ export function makeReport(record){
     Graph renderer: ${escapeHtml(record.graph.renderer)} ${escapeHtml(record.graph.renderer_version)} · Project schema: ${escapeHtml(record.schema_version)}<br>
     Software source URL at time of save: ${escapeHtml(record.software.source_page)}</p></section>
     <section><h2>Interpretation and limitations</h2><p>${escapeHtml(r.limitations)}</p>
+    <p>Saved graph-annotation preferences: <code>${escapeHtml(JSON.stringify(record.graph.settings.annotationMode))}</code>, label format <code>${escapeHtml(JSON.stringify(record.graph.settings.annotationFormat))}</code>, selected pairs <code>${escapeHtml(JSON.stringify(record.graph.settings.shownPairs || []))}</code>.</p>
     <p>The report documents the test implementation, not whether its assumptions were met. Verify experimental units, planned comparisons and source measurements before using the results in research.</p>
     <small>Analysis results are a frozen record. Software updates must not silently recalculate it. If reanalysis is requested, save a new record.</small></section></body></html>`;
 }

@@ -1,4 +1,4 @@
-"""BioStats 0.2.0 computational engine.
+"""BioStats 0.3.0 computational engine.
 
 Uses established scientific libraries. No custom approximations for p values.
 The browser records the exact function names, arguments and versions.
@@ -12,9 +12,10 @@ import statsmodels
 from scipy import stats
 from statsmodels.stats.oneway import anova_oneway
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from statsmodels.stats.multitest import multipletests
 
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.3.0"
 
 
 def _finite_number(x):
@@ -64,6 +65,9 @@ def analyze(payload):
                           "median": float(np.median(values))})
 
     comps = []
+    posthoc_method = None
+    posthoc_function = None
+    posthoc_arguments = None
     effect = None
     df = None
     func = None
@@ -83,6 +87,9 @@ def analyze(payload):
         measurements = np.concatenate(data)
         labels = np.concatenate([[name] * len(a) for name, a in zip(names, data)])
         post = pairwise_tukeyhsd(measurements, labels, alpha=alpha)
+        posthoc_method = "Tukey HSD (all pairs; familywise adjusted)"
+        posthoc_function = "statsmodels.stats.multicomp.pairwise_tukeyhsd"
+        posthoc_arguments = {"alpha": alpha}
         # Pair ordering in statsmodels follows sorted unique group names.
         sorted_names = sorted(names)
         idx = 0
@@ -91,7 +98,7 @@ def analyze(payload):
                 ci = post.confint[idx]
                 comps.append({"group1": sorted_names[i], "group2": sorted_names[j],
                               "difference": float(post.meandiffs[idx]),
-                              "p_adjusted": float(post.pvalues[idx]),
+                              "p_raw": None, "p_adjusted": float(post.pvalues[idx]),
                               "ci_low": float(ci[0]), "ci_high": float(ci[1]),
                               "reject": bool(post.reject[idx])})
                 idx += 1
@@ -130,6 +137,45 @@ def analyze(payload):
     if not (np.isfinite(stat) and np.isfinite(p_value)):
         raise ValueError("Test is undefined for these data; inspect variability and group values")
 
+    # The omnibus tests do not identify which groups differ. For the Welch and
+    # Kruskal branches, conduct established pairwise tests and adjust *all*
+    # possible pairwise P values as one Holm family. This is NOT Games–Howell
+    # or Dunn's test; the distinction is reported explicitly.
+    if test in ("welch_anova", "kruskal"):
+        pairs = []
+        raw = []
+        for i in range(len(names)):
+            for j in range(i + 1, len(names)):
+                if test == "welch_anova":
+                    out = stats.ttest_ind(data[i], data[j], equal_var=False, alternative="two-sided")
+                    method = "Welch independent t tests + Holm adjustment"
+                    function = "scipy.stats.ttest_ind"
+                    params = {"equal_var": False, "alternative": "two-sided"}
+                else:
+                    out = stats.mannwhitneyu(data[i], data[j], alternative="two-sided", method="auto")
+                    method = "Pairwise Mann–Whitney U + Holm adjustment (not Dunn's)"
+                    function = "scipy.stats.mannwhitneyu"
+                    params = {"alternative": "two-sided", "method": "auto"}
+                if not np.isfinite(out.pvalue):
+                    raise ValueError("A pairwise comparison is undefined for these data")
+                raw.append(float(out.pvalue))
+                pairs.append((i,j,float(out.statistic),float(out.df) if hasattr(out, "df") else None))
+        adjusted = multipletests(raw, alpha=alpha, method="holm")[1]
+        for (i,j,teststat,pair_df),p,p_adj in zip(pairs,raw,adjusted):
+            comps.append({"group1": names[i], "group2": names[j], "difference": float(np.mean(data[j])-np.mean(data[i])),
+                          "p_raw": p, "p_adjusted": float(p_adj), "statistic": teststat,
+                          "df": pair_df, "ci_low": None, "ci_high": None, "reject": bool(p_adj < alpha)})
+        posthoc_method = method
+        posthoc_function = function + " + statsmodels.stats.multitest.multipletests"
+        posthoc_arguments = {"pairwise_test": params, "adjustment": "holm", "adjusted_family": "all pairwise comparisons", "pairs": len(pairs)}
+    elif test in ("ttest", "welch_ttest", "paired_ttest"):
+        comps = [{"group1":names[0], "group2":names[1], "difference":float(np.mean(data[1])-np.mean(data[0])),
+                  "p_raw":p_value, "p_adjusted":p_value, "ci_low":None, "ci_high":None,
+                  "reject":bool(p_value < alpha), "statistic":stat, "df":df[0]}]
+        posthoc_method = "Single planned comparison (no multiplicity adjustment)"
+        posthoc_function = func
+        posthoc_arguments = args
+
     return {
         "app_version": APP_VERSION,
         "test_id": test,
@@ -142,20 +188,21 @@ def analyze(payload):
         "subject_ids": payload.get("subject_ids") if test == "paired_ttest" else None,
         "significant": bool(p_value < alpha),
         "group_summaries": summaries,
-        "posthoc": {"method": "Tukey HSD", "comparisons": comps} if comps else None,
+        "posthoc": {"method": posthoc_method, "comparisons": comps,
+                    "family": "all_pairs" if test in ("anova", "welch_anova", "kruskal") else "single"} if comps else None,
         "effect_size": effect,
         "engine": {
             "language": "Python",
             "python_packages": {"scipy": scipy.__version__, "statsmodels": statsmodels.__version__, "numpy": np.__version__},
             "primary_function": func,
             "primary_arguments": args,
-            "posthoc_function": "statsmodels.stats.multicomp.pairwise_tukeyhsd" if comps else None,
-            "posthoc_arguments": {"alpha": alpha} if comps else None,
+            "posthoc_function": posthoc_function,
+            "posthoc_arguments": posthoc_arguments,
         },
         "limitations": ("Matched measurements: the paired t test assumes approximately normal paired differences; "
                         "matching is by row and is not an independent-samples test." if test == "paired_ttest" else
                         "Independent samples; check distributions, variance, and the experimental unit. "
-                        "Welch ANOVA and Kruskal–Wallis have no post hoc comparisons in this prototype." if test in ("welch_anova", "kruskal") else
+                        "Welch ANOVA is followed by pairwise Welch t tests with Holm adjustment across all pairs (not Games–Howell). Kruskal–Wallis is followed by pairwise Mann–Whitney U tests with Holm adjustment (not Dunn's); pairwise rank tests address distributional differences, not necessarily medians. Only prespecified comparisons should be interpreted." if test in ("welch_anova", "kruskal") else
                         "Independent samples; assess assumptions and biological replication."),
     }
 

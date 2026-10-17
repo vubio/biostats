@@ -15,6 +15,9 @@ let lastAnalysis=null;
 let lastDataSignature=null;
 const plotEl=$('plot');
 let drawTimer=null;
+let previewRevision=0;
+let chosenPairs=new Set();
+const pairKey=(a,b)=>JSON.stringify([a,b].sort());
 const entryTest=()=>$('test-select').value;
 const paired=()=>isPairedTest(entryTest());
 const name=()=>$('dataset-name').value.trim()||'Untitled experiment';
@@ -26,6 +29,8 @@ function message(text,error=false){const b=$('message');b.hidden=false;b.textCon
 function clearMessage(){$('message').hidden=true;}
 function invalidate(){
   lastAnalysis=null;lastDataSignature=null;
+  chosenPairs.clear();
+  $('comparison-panel').hidden=true;
   $('analysis-results').className='results-placeholder';
   $('analysis-results').textContent='Dataset or analysis settings changed. Run statistics again on the current table.';
 }
@@ -124,16 +129,25 @@ function renderGrid(){
   $('remove-row').disabled=rows.length<=2;
 }
 async function reproject({strict=false}={}){
-  if(!rows.length){groups=[];subjectIds=[];plotEl.textContent='Create a dataset to display a graph.';return;}
-  try{
-    const p=validateTable(rows);groups=p.groups;subjectIds=p.subjectIds;
-    $('edit-state').textContent=`${groups.length} groups · ${Math.max(...groups.map(g=>g.values.length))} max observations/group · ${sourceDescription()}`;
-    await draw();
-  }catch(e){
-    groups=[];subjectIds=[];plotEl.replaceChildren();plotEl.textContent='Complete a valid table to preview a figure.';
-    $('edit-state').textContent=`Check table: ${e.message}`;
+  const revision=++previewRevision;
+  if(!rows.length){groups=[];subjectIds=[];plotEl.replaceChildren();plotEl.textContent='Create a dataset to display a graph.';return;}
+  let parsed;
+  try { parsed=validateTable(rows); }
+  catch(e){
+    if(revision===previewRevision){
+      groups=[];subjectIds=[];plotEl.replaceChildren();
+      plotEl.textContent=`Data preview unavailable: ${e.message}`;
+      $('edit-state').textContent=`Check table: ${e.message}`;
+    }
     if(strict)throw e;
+    return;
   }
+  if(revision!==previewRevision)return;
+  groups=parsed.groups;subjectIds=parsed.subjectIds;
+  $('edit-state').textContent=`${groups.length} groups · ${Math.max(...groups.map(g=>g.values.length))} max observations/group · ${sourceDescription()}`;
+  // A plotting-library failure is distinct from invalid data. Never erase a
+  // statistically valid dataset with a generic "complete the table" message.
+  await draw();
 }
 function refreshLater(){clearTimeout(drawTimer);drawTimer=setTimeout(()=>reproject(),350);}
 async function replaceGrid(newRows,newSource,sourceSnapshot=null){
@@ -152,15 +166,66 @@ function readSettings(){
   if(max!==''&&(!Number.isFinite(Number(max))||Number(max)<=0))throw Error('Y-axis maximum must be positive.');
   if(!Number.isInteger(width)||width<300||width>2400)throw Error('Export width must be 300–2400 px.');
   if(fs<8||fs>32)throw Error('Font size must be 8–32 px.');
-  return {...defaultChartSettings(),type:$('plot-type').value,error:$('error-type').value,palette:$('palette').value,yMax:max===''?null:Number(max),yTitle:$('y-title').value,title:$('figure-title').value,fontSize:fs,width};
+  return {...defaultChartSettings(),type:$('plot-type').value,error:$('error-type').value,palette:$('palette').value,yMax:max===''?null:Number(max),yTitle:$('y-title').value,title:$('figure-title').value,fontSize:fs,width,
+    annotationMode:$('annotation-mode').value,annotationFormat:$('annotation-format').value,shownPairs:selectedComparisons().map(c=>[c.group1,c.group2])};
 }
-async function draw(){
+function selectedComparisons(){
+  if(!lastAnalysis || lastDataSignature!==signature())return [];
+  const cs=lastAnalysis.posthoc?.comparisons||[];
+  const mode=$('annotation-mode').value;
+  if(mode==='none')return [];
+  if(mode==='control')return cs.filter(c=>c.group1===groups[0]?.name||c.group2===groups[0]?.name);
+  if(mode==='all')return cs;
+  return cs.filter(c=>chosenPairs.has(pairKey(c.group1,c.group2)));
+}
+async function draw({strict=false}={}){
   if(!groups.length)return;
-  try{await renderPlot(plotEl,groups,readSettings());}catch(e){message(e.message,true);}
+  try{
+    const selections=selectedComparisons();
+    if(selections.length>15)throw Error(`${selections.length} pairs selected. Maximum 15 graph brackets; select a subset in the comparison matrix. All P values remain accessible in the results.`);
+    $('annotation-warning').textContent='';
+    await renderPlot(plotEl,groups,readSettings(),selections,alpha());
+  }catch(e){
+    $('annotation-warning').textContent=e.message;
+    message(`Graphing error: ${e.message}. Numerical data remain intact.`,true);
+    if(strict)throw e;
+  }
+}
+function matrixP(v){return v==null?'—':formatP(v);}
+function renderComparisonMatrix(){
+  const panel=$('comparison-panel');const comparisons=lastAnalysis?.posthoc?.comparisons||[];
+  panel.hidden=!comparisons.length;
+  const dest=$('comparison-matrix');dest.replaceChildren();
+  if(!comparisons.length)return;
+  const headings=['Graph','Group 1','Group 2','Mean difference (2 − 1)','Raw P','Adjusted P'];
+  const table=document.createElement('table');table.className='results-table';
+  const header=document.createElement('thead');const hrow=document.createElement('tr');
+  headings.forEach(h=>{const th=document.createElement('th');th.textContent=h;hrow.append(th);});header.append(hrow);table.append(header);
+  const body=document.createElement('tbody');
+  comparisons.forEach(c=>{
+    const tr=document.createElement('tr');const td=document.createElement('td');
+    const ch=document.createElement('input');ch.type='checkbox';ch.className='pair-checkbox';ch.dataset.pair=pairKey(c.group1,c.group2);
+    ch.setAttribute('aria-label',`Display ${c.group1} versus ${c.group2} on figure`);
+    ch.checked=chosenPairs.has(pairKey(c.group1,c.group2));
+    td.append(ch);tr.append(td);
+    for(const value of [c.group1,c.group2,c.difference.toPrecision(5),matrixP(c.p_raw),matrixP(c.p_adjusted)]){
+      const td=document.createElement('td');td.textContent=value;tr.append(td);
+    }
+    body.append(tr);
+  });
+  table.append(body);dest.append(table);
+  $('comparison-note').textContent=`Method: ${lastAnalysis.posthoc.method}. All ${comparisons.length} pairs are in the adjustment family (for multi-group tests), even if only some brackets are displayed. Tukey HSD does not provide a separate unadjusted pairwise P value.`;
+  dest.hidden=!$('show-matrix').checked;
+  syncPairChecks();
+}
+function syncPairChecks(){
+  const mode=$('annotation-mode').value;
+  const selected=new Set(selectedComparisons().map(c=>pairKey(c.group1,c.group2)));
+  document.querySelectorAll('.pair-checkbox').forEach(ch=>{ch.checked=selected.has(ch.dataset.pair);});
 }
 function resultHtml(r){
   const summaries=r.group_summaries.map(x=>`<tr><td>${escapeHtml(x.group)}</td><td>${x.n}</td><td>${x.mean.toPrecision(5)}</td><td>${x.sd.toPrecision(5)}</td></tr>`).join('');
-  const comp=r.posthoc?.comparisons?.length?`<h3 class="hint">Tukey HSD — all pairs</h3><table class="results-table"><thead><tr><th>Comparison</th><th>Difference</th><th>Adjusted P</th></tr></thead><tbody>${r.posthoc.comparisons.map(c=>`<tr><td>${escapeHtml(c.group1)} → ${escapeHtml(c.group2)}</td><td>${c.difference.toPrecision(5)}</td><td>${formatP(c.p_adjusted)}</td></tr>`).join('')}</tbody></table>`:'';
+  const comp=r.posthoc?.comparisons?.length?`<p class="hint">Pairwise comparison results are shown in the matrix below. These are exploratory unless comparisons were planned before examining the data.</p>`:'';
   return `<div class="result-card"><strong>${escapeHtml(r.label)}</strong><div class="value">P = ${formatP(r.p_value)}</div><p>Statistic = ${r.statistic.toPrecision(6)} · df = ${r.df.map(x=>Number(x).toPrecision(5)).join(', ')} · α = ${r.alpha}${isTTest(r.test_id)?' · alternative = '+escapeHtml(r.alternative):''}</p></div><table class="results-table"><thead><tr><th>Group</th><th>n</th><th>Mean</th><th>SD</th></tr></thead><tbody>${summaries}</tbody></table>${comp}<p class="hint">${escapeHtml(r.engine.primary_function)} · SciPy ${escapeHtml(r.engine.python_packages.scipy)} · statsmodels ${escapeHtml(r.engine.python_packages.statsmodels)}.</p><p class="hint">${escapeHtml(r.limitations)}</p>`;
 }
 async function runAnalysis(){
@@ -171,6 +236,7 @@ async function runAnalysis(){
     const result=await runStatisticalTest(input,status=>{$('analysis-running').textContent=status;$('engine-status').textContent=status;});
     if(sig!==signature())throw Error('Data changed while the analysis was running. Run it again.');
     lastAnalysis=result;lastDataSignature=sig;$('analysis-results').className='';$('analysis-results').innerHTML=resultHtml(result);
+    chosenPairs.clear();renderComparisonMatrix();await draw();
     $('engine-status').textContent='Python statistical engine ready';$('engine-status').className='status-pill ready';
     message('Statistics calculated from the current editable table. Save to preserve results.');
   }finally{$('run-stats').disabled=false;$('analysis-running').textContent='';}
@@ -195,7 +261,7 @@ async function save(){
     const yes=confirm('You chose not to save the analyzed numerical values. The original P values and SVG remain viewable, but exact recalculation might be impossible without the external data. Continue?');
     if(!yes)return;
   }
-  await renderPlot(plotEl,groups,rec.graph.settings); // ensure graph matches controls at the instant of save
+  await draw({strict:true}); // preserve the currently selected brackets and last-minute graph settings
   const svg=await figureSvg(plotEl,rec.graph.settings);
   await saveNewRecord({record:rec,svg,processedCsv:rec.dataset.processed_values_stored?canonicalCsv(rows):null});
   showSaved();message(`Analysis saved with ${rec.dataset.processed_values_stored?'':'NO '}numeric input copy; original source files were never modified.`);
@@ -310,6 +376,15 @@ function bind(){
   $('new-project').onclick=()=>handle(async()=>{await newProject();showSaved();message('Local project folder created.');});
   $('open-project').onclick=()=>handle(async()=>{await openProject();showSaved();message('Existing project opened. Frozen results were not recalculated.');});
   $('run-stats').onclick=()=>handle(runAnalysis);$('save-analysis').onclick=()=>handle(save);
+  $('comparison-matrix').addEventListener('change',e=>{
+    const checkbox=e.target.closest('input.pair-checkbox');if(!checkbox)return;
+    // Carry the *currently visible* set forward when switching from an automatic mode.
+    if($('annotation-mode').value!=='custom')chosenPairs=new Set(selectedComparisons().map(c=>pairKey(c.group1,c.group2)));
+    if(checkbox.checked)chosenPairs.add(checkbox.dataset.pair);else chosenPairs.delete(checkbox.dataset.pair);
+    $('annotation-mode').value='custom';syncPairChecks();draw();
+  });
+  $('show-matrix').onchange=()=>{$('comparison-matrix').hidden=!$('show-matrix').checked;};
+  for(const key of ['annotation-mode','annotation-format'])$(key).onchange=()=>{syncPairChecks();draw();};
   for(const key of ['plot-type','error-type','palette','y-max','y-title','figure-title','font-size','plot-width']){
     $(key).addEventListener('input',refreshLater);$(key).addEventListener('change',refreshLater);
   }
@@ -317,11 +392,11 @@ function bind(){
   $('store-values').onchange=()=>{$('storage-warning').textContent=$('store-values').checked?
     'The exact analyzed numerical table will be saved as input.csv in the project (recommended for reproducibility).':
     'Numeric input will NOT be saved. The report will retain source-file metadata, input fingerprint, whether data were edited, and saved P values. Recalculation may not be possible.';};
-  $('export-svg').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await renderPlot(plotEl,groups,readSettings());downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
-  $('export-png').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await renderPlot(plotEl,groups,readSettings());downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
+  $('export-svg').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await draw({strict:true});downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
+  $('export-png').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await draw({strict:true});downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
   $('print-pdf').onclick=()=>handle(async()=>{
     if(!groups.length)throw Error('Finish entering valid data first.');
-    await renderPlot(plotEl,groups,readSettings());
+    await draw({strict:true});
     const svg=await figureSvg(plotEl,readSettings()),url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
     const holder=$('printable-figure');holder.replaceChildren();const img=document.createElement('img');img.src=url;img.alt='Vector figure';holder.append(img);
     await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('SVG printing failed'));});window.print();setTimeout(()=>URL.revokeObjectURL(url),60000);

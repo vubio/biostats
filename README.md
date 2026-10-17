@@ -1,4 +1,4 @@
-# BioStats · v0.2.0 — experimental prototype
+# BioStats · v0.3.0 — experimental prototype
 
 **Live app:** https://vubio.github.io/biostats/  
 **Source:** https://github.com/vubio/biostats
@@ -51,3 +51,8 @@ Check **Save the exact analyzed numerical values** to include the real processed
 - `tests/test_engine.py`: initial reference-value smoke tests, **not** comprehensive statistical validation.
 
 Local Python check: `PYTHONPATH=. pytest -q tests/`. Local web check: run `python -m http.server 8000` at repository root and open `http://localhost:8000` in Chrome. GitHub Pages publishes the `main` branch root.
+
+
+### v0.3 comparisons and annotations
+
+The analysis panel displays a pairwise comparison matrix for independent multi-group comparisons and single t tests. Ordinary one-way ANOVA uses statsmodels Tukey HSD (familywise adjusted). Welch ANOVA uses independent pairwise Welch tests with Holm correction over **all** pairs. Kruskal–Wallis uses independent pairwise Mann–Whitney U tests with Holm correction (not Dunn's). Single-group-pair t tests show the primary P value unchanged. Display options select brackets without changing the adjustment family; all results and graph settings are saved in the frozen report. At most fifteen brackets are displayed in one figure to avoid unreadable plots. Other analysis families remain unimplemented and are disabled in the selector.
