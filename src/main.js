@@ -195,6 +195,7 @@ async function save(){
     const yes=confirm('You chose not to save the analyzed numerical values. The original P values and SVG remain viewable, but exact recalculation might be impossible without the external data. Continue?');
     if(!yes)return;
   }
+  await renderPlot(plotEl,groups,rec.graph.settings); // ensure graph matches controls at the instant of save
   const svg=await figureSvg(plotEl,rec.graph.settings);
   await saveNewRecord({record:rec,svg,processedCsv:rec.dataset.processed_values_stored?canonicalCsv(rows):null});
   showSaved();message(`Analysis saved with ${rec.dataset.processed_values_stored?'':'NO '}numeric input copy; original source files were never modified.`);
@@ -316,10 +317,11 @@ function bind(){
   $('store-values').onchange=()=>{$('storage-warning').textContent=$('store-values').checked?
     'The exact analyzed numerical table will be saved as input.csv in the project (recommended for reproducibility).':
     'Numeric input will NOT be saved. The report will retain source-file metadata, input fingerprint, whether data were edited, and saved P values. Recalculation may not be possible.';};
-  $('export-svg').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
-  $('export-png').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
+  $('export-svg').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await renderPlot(plotEl,groups,readSettings());downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
+  $('export-png').onclick=()=>handle(async()=>{if(!groups.length)throw Error('Finish entering valid data first.');await renderPlot(plotEl,groups,readSettings());downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
   $('print-pdf').onclick=()=>handle(async()=>{
     if(!groups.length)throw Error('Finish entering valid data first.');
+    await renderPlot(plotEl,groups,readSettings());
     const svg=await figureSvg(plotEl,readSettings()),url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));
     const holder=$('printable-figure');holder.replaceChildren();const img=document.createElement('img');img.src=url;img.alt='Vector figure';holder.append(img);
     await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('SVG printing failed'));});window.print();setTimeout(()=>URL.revokeObjectURL(url),60000);
