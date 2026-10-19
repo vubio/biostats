@@ -454,14 +454,13 @@ function bind(){
     previousTest=next;$('alternative').value='two-sided';invalidate();fillExampleOptions();reproject();
   });
   $('alpha').onchange=invalidate;$('alternative').onchange=invalidate;
-  $('example-select').onchange=()=>{updateExampleInfo();$('example-info').hidden=true;$('example-info-btn').setAttribute('aria-expanded','false');};
+  $('example-select').onchange=()=>{if(selectedPreset){$('preset-preview-mode').value=$('example-select').value.endsWith('_rows')?'rows':'columns';}updateExampleInfo();$('example-info').hidden=true;$('example-info-btn').setAttribute('aria-expanded','false');};
   $('example-info-btn').onclick=()=>{const show=$('example-info').hidden;$('example-info').hidden=!show;$('example-info-btn').setAttribute('aria-expanded',String(show));};
   $('load-example').onclick=()=>handle(async()=>{
     if(selectedPreset){
       const id=$('example-select').value,m=id.match(/^viability_(\d+)_(columns|rows)$/);
       if(!m)throw Error('Choose a cell viability teaching example');
-      const n=Number(m[1]),orientation=m[2];$('replicate-count').value=String(n);
-      $('preset-preview-mode').value=orientation;
+      const n=Number(m[1]),orientation=$('preset-preview-mode').value;$('replicate-count').value=String(n);
       const matrix=teachingPreset(selectedPreset,n,orientation);
       $('dataset-name').value=`Cell Viability (1) — synthetic ${n}-replicate example`;
       $('data-sheet').value='SYNTHETIC EXAMPLE — not real experimental results; technical wells do not imply independent n.';
