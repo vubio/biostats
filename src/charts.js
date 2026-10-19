@@ -45,7 +45,7 @@ export function plotSpec(groups, s, comparisons = [], alpha = .05) {
     const jitter=values.map((_,j)=>((j*0.61803398875+i*0.314159)%1-.5)*.31);
     if(s.showMarkers!==false)traces.push({type:'scatter',mode:'markers',name:g.name,x:values.map((_,j)=>i+1+jitter[j]),y:values,marker:{color,size:8,opacity:.92,line:{color:'#ffffff',width:.5}},showlegend:!!s.showLegend,hovertemplate:`${g.name}: %{y:.3g}<extra></extra>`});
   });
-  if(s.showPointLabels){traces.filter(t=>t.type==='scatter'&&t.mode==='markers'&&!t.name).forEach(t=>{t.text=t.y.map(v=>Number(v).toPrecision(3));t.textposition='top center';t.mode+='+text';});}
+  if(s.showPointLabels){groups.forEach((g,i)=>traces.push({type:'scatter',mode:'text',x:[i+1],y:[bounds[i].mean],text:[bounds[i].mean.toPrecision(3)],textposition:'top center',showlegend:false,hoverinfo:'skip'}));}
   const f=Number(s.fontSize)||15;
   const yLower=Math.min(0,...bounds.map(b=>b.lowest))- (dataMinimum < 0 ? span*.06 : 0);
   const yTop=Math.max(...bounds.map(b=>b.highest));
