@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install numpy scipy statsmodels pandas pytest
-      - run: PYTHONPATH=. pytest -q tests/test_engine.py tests/test_comparisons.py tests/test_families.py
+      - run: PYTHONPATH=. pytest -q tests/test_engine.py tests/test_comparisons.py tests/test_families.py tests/test_descriptive.py
   javascript-syntax:
     runs-on: ubuntu-latest
     steps:
@@ -23,3 +23,4 @@ jobs:
           node-version: '22'
       - run: |
           for script in src/*.js; do node --check "$script"; done
+      - run: node --test tests/presets.test.mjs tests/charts-preset.test.mjs

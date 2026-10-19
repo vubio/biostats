@@ -11,6 +11,12 @@
 .frozen-dialog{max-width:min(880px,95vw);max-height:92vh;width:880px;border:1px solid #cbd5e1;border-radius:15px;padding:18px;box-shadow:0 18px 55px #1a2c3b33}
 [hidden]{display:none!important}
 
+/* v0.5: project-specific analysis presets + reusable plotting controls. */
+.preset-launcher{background:#f0f8f8;border:1px solid #cce4e5;border-radius:11px;padding:15px 17px;margin:0 0 17px}
+.preset-launcher .hint{margin:7px 0 0}.preset-options{padding:14px 17px;margin:12px 0 17px;background:#f9fbfd;border:1px solid #dae7ea;border-radius:9px}
+.transpose-suggestion{margin:14px 0;padding:12px 14px;background:#fff8e8;border:1px solid #f0dbaa;color:#80591d;border-radius:9px;display:flex;align-items:center;gap:13px;flex-wrap:wrap;font-size:12px}
+.graph-toggle-row{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:12px 0;padding:13px 16px;background:#f7fafb;border-radius:10px}
+.graph-toggle-row .check-row{font-weight:550}.graph-toggle-row input{accent-color:var(--teal)}
 /* v0.3: full comparison matrix and annotation settings. */
 .comparison-panel{margin-top:20px;padding:14px 16px;border:1px solid #dce9eb;border-radius:10px;background:#f9fcfc}
 .comparison-heading h3{font-size:15px;margin:0 0 5px}.comparison-heading p{font-size:12px;color:#64748b;margin:0 0 12px;line-height:1.5}

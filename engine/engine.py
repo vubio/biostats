@@ -15,7 +15,7 @@ from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from statsmodels.stats.multitest import multipletests
 
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 
 
 def _finite_number(x):
@@ -47,8 +47,8 @@ def analyze(payload):
     if len(set(names)) != len(names):
         raise ValueError("Group names must be unique")
     data = [np.array([_finite_number(v) for v in g["values"]], dtype=float) for g in groups]
-    if any(len(a) < 2 for a in data):
-        raise ValueError("At least two observations are required per group")
+    if any(len(a) < (1 if test == 'summary' else 2) for a in data):
+        raise ValueError('At least one observation is required for descriptive summaries; inferential tests require at least two per group')
     if test in ("ttest", "welch_ttest", "paired_ttest") and len(groups) != 2:
         raise ValueError("A two-group t test requires exactly two groups")
     if test in ("anova", "welch_anova", "kruskal") and len(groups) < 3:
@@ -61,9 +61,9 @@ def analyze(payload):
     summaries = []
     for name, values in zip(names, data):
         n = len(values)
-        sd = float(np.std(values, ddof=1))
+        sd = float(np.std(values, ddof=1)) if n>1 else None
         summaries.append({"group": name, "n": n, "mean": float(np.mean(values)),
-                          "sd": sd, "sem": float(sd / np.sqrt(n)),
+                          "sd": sd, "sem": float(sd / np.sqrt(n)) if n>1 else None,
                           "median": float(np.median(values))})
 
     comps = []
@@ -74,6 +74,14 @@ def analyze(payload):
     df = None
     func = None
     args = {}
+    if test == 'summary':
+        return {'app_version': APP_VERSION, 'test_id': test, 'label':'Descriptive group summary (no hypothesis test)',
+          'statistic':None,'p_value':None,'df':[],'alpha':alpha,'alternative':'two-sided',
+          'significant':None,'group_summaries':summaries,'posthoc':None,'effect_size':None,
+          'engine':{'language':'Python','python_packages':{'numpy':np.__version__, 'scipy':scipy.__version__, 'statsmodels':statsmodels.__version__},
+          'primary_function':'numpy.mean / numpy.std','primary_arguments':{'ddof':1,'single_measurement_sd':None},
+          'posthoc_function':None,'posthoc_arguments':None},
+          'limitations':'Descriptive summary only; no P value or inferential comparison. SD/SEM are undefined for one replicate. Technical wells are not automatically independent biological replicates.'}
     if test == "anova":
         out = stats.f_oneway(*data)
         stat = float(out.statistic)

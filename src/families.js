@@ -1,7 +1,7 @@
 // Explicit schemas: never silently treat longitudinal or factorial data as independent columns.
 export const METHODS = {
   groups:[
-    ['anova','Ordinary one-way ANOVA + Tukey HSD'],['welch_anova','Welch ANOVA + Welch/Holm pairs'],
+    ['summary','Descriptive summary only (no P value)'],['anova','Ordinary one-way ANOVA + Tukey HSD'],['welch_anova','Welch ANOVA + Welch/Holm pairs'],
     ['kruskal','Kruskal–Wallis + Mann–Whitney/Holm'],['ttest','Student unpaired t test'],
     ['welch_ttest','Welch unpaired t test'],['paired_ttest','Paired t test (two columns)']
   ],
