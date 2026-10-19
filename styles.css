@@ -18,7 +18,7 @@
 .graph-toggle-row{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:12px 0;padding:13px 16px;background:#f7fafb;border-radius:10px}
 .graph-toggle-row .check-row{font-weight:550}.graph-toggle-row input{accent-color:var(--teal)}
 /* v0.3: full comparison matrix and annotation settings. */
-.comparison-panel{margin-top:20px;padding:14px 16px;border:1px solid #dce9eb;border-radius:10px;background:#f9fcfc}
+.preview-status{margin:8px 0 10px;font-size:12px;line-height:1.5;color:#2c655b}.preview-status.preview-stale{padding:10px 13px;color:#8a4c20;background:#fff5e9;border:1px solid #e8c99c;border-radius:8px}.comparison-panel{margin-top:20px;padding:14px 16px;border:1px solid #dce9eb;border-radius:10px;background:#f9fcfc}
 .comparison-heading h3{font-size:15px;margin:0 0 5px}.comparison-heading p{font-size:12px;color:#64748b;margin:0 0 12px;line-height:1.5}
 .comparison-table-wrap{max-height:330px;overflow:auto;margin-top:13px}
 .comparison-controls{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:16px 0 4px;padding:14px;background:#f6fafb;border-radius:9px}

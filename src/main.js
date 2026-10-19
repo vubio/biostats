@@ -22,6 +22,8 @@ let lastDataSignature=null;
 const plotEl=$('plot');
 let drawTimer=null;
 let previewRevision=0;
+let datasetValid=false; // Prevent export or analysis of a stale preview.
+let lastPreviewValid=false;
 let chosenPairs=new Set();
 let tableTransforms=[];
 let selectedPreset='';
@@ -29,7 +31,7 @@ const pairKey=(a,b)=>JSON.stringify([a,b].sort());
 const entryTest=()=>$('test-select').value;
 const entryFamily=()=>$('analysis-family').value;
 const special=()=>isSpecial(entryTest());
-const validDataset=()=>special()?Boolean(familyData?.records?.length):Boolean(groups.length);
+const validDataset=()=>datasetValid&&(special()?Boolean(familyData?.records?.length):Boolean(groups.length));
 const paired=()=>isPairedTest(entryTest());
 const name=()=>$('dataset-name').value.trim()||'Untitled experiment';
 const note=()=>$('data-sheet').value.trim();
@@ -165,27 +167,43 @@ function renderGrid(){
 }
 async function reproject({strict=false}={}){
   const revision=++previewRevision;
-  if(!rows.length){groups=[];subjectIds=[];familyData=null;plotEl.replaceChildren();plotEl.textContent='Create a dataset to display a graph.';return;}
+  if(!rows.length){datasetValid=false;lastPreviewValid=false;groups=[];subjectIds=[];familyData=null;plotEl.replaceChildren();plotEl.textContent='Create a dataset to display a graph.';$('preview-status').textContent='No data to preview.';return;}
   let parsed;
   try { parsed=special()?validateSpecialTable(rows,entryTest()):validateTable(rows); }
   catch(e){
     if(revision===previewRevision){
-      groups=[];subjectIds=[];familyData=null;plotEl.replaceChildren();
-      plotEl.textContent=`Data preview unavailable: ${e.message}`;
+      datasetValid=false;
+      // Keep the previous SVG/Plotly preview visually available while editing.
+      // It is marked stale and is NEVER eligible for export or statistical analysis.
+      if(!lastPreviewValid){plotEl.replaceChildren();plotEl.textContent='Complete a valid table to preview a figure.';}
+      $('preview-status').textContent=(lastPreviewValid?'Previous valid graph retained — NOT updated to the current table. ':'Preview pending. ')+e.message+' Fill missing values, load an example, or click Refresh graph.';
+      $('preview-status').className='preview-status preview-stale';
       $('edit-state').textContent=`Check table: ${e.message}`;
     }
     if(strict)throw e;
     return;
   }
   if(revision!==previewRevision)return;
+  datasetValid=true;
   if(special()){familyData=parsed;groups=[];subjectIds=[];}else{groups=parsed.groups;subjectIds=parsed.subjectIds;familyData=null;}
   $('edit-state').textContent=special()?`${parsed.rows} complete observational rows · ${sourceDescription()}`:`${groups.length} groups · ${Math.max(...groups.map(g=>g.values.length))} max observations/group · ${sourceDescription()}`;
   // A plotting-library failure is distinct from invalid data. Never erase a
   // statistically valid dataset with a generic "complete the table" message.
   await draw();
+  if(revision!==previewRevision)return;
+  lastPreviewValid=true;
+  $('preview-status').textContent='Graph updated from the current editable measurements.';
+  $('preview-status').className='preview-status';
 }
-function refreshLater(){clearTimeout(drawTimer);drawTimer=setTimeout(()=>reproject(),350);}
+function refreshLater(){clearTimeout(drawTimer);drawTimer=setTimeout(()=>handle(()=>reproject()),350);}
 async function replaceGrid(newRows,newSource,sourceSnapshot=null){
+  clearTimeout(drawTimer);
+  ++previewRevision;
+  datasetValid=false;lastPreviewValid=false;groups=[];familyData=null;subjectIds=[];
+  if(window.Plotly&&plotEl.data)window.Plotly.purge(plotEl);
+  plotEl.replaceChildren();
+  $('preview-status').textContent='Loading table and building graph…';
+  $('preview-status').className='preview-status';
   rows=newRows.map(r=>r.map(v=>String(v??'')));
   const size=rows.reduce((maximum,row)=>Math.max(maximum,row.length),0);rows=rows.map(r=>Array.from({length:size},(_,i)=>r[i]??''));
   provenance=newSource;importedRowsSnapshot=sourceSnapshot??(newSource.kind==='manual'?null:JSON.stringify(rows));
@@ -312,6 +330,7 @@ async function makeCurrentRecord(){
 }
 async function save(){
   if(!isProjectOpen())throw Error('Create or open a local project folder first.');
+  await reproject({strict:true});
   const rec=await makeCurrentRecord();
   if(!rec.dataset.processed_values_stored){
     const yes=confirm('You chose not to save the analyzed numerical values. The original P values and SVG remain viewable, but exact recalculation might be impossible without the external data. Continue?');
@@ -552,6 +571,7 @@ function bind(){
   $('new-project').onclick=()=>handle(async()=>{await newProject();showSaved();message('Local project folder created.');});
   $('open-project').onclick=()=>handle(async()=>{await openProject();showSaved();message('Existing project opened. Frozen results were not recalculated.');});
   $('run-stats').onclick=()=>handle(runAnalysis);$('save-analysis').onclick=()=>handle(save);
+  $('refresh-graph').onclick=()=>handle(async()=>{clearTimeout(drawTimer);await reproject({strict:true});message('Graph refreshed from the current editable table.');});
   $('comparison-matrix').addEventListener('change',e=>{
     const checkbox=e.target.closest('input.pair-checkbox');if(!checkbox)return;
     // Carry the *currently visible* set forward when switching from an automatic mode.
@@ -569,9 +589,10 @@ function bind(){
   $('store-values').onchange=()=>{$('storage-warning').textContent=$('store-values').checked?
     'The exact analyzed numerical table will be saved as input.csv in the project (recommended for reproducibility).':
     'Numeric input will NOT be saved. The report will retain source-file metadata, input fingerprint, whether data were edited, and saved P values. Recalculation may not be possible.';};
-  $('export-svg').onclick=()=>handle(async()=>{if(!validDataset())throw Error('Finish entering valid data first.');await draw({strict:true});downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
-  $('export-png').onclick=()=>handle(async()=>{if(!validDataset())throw Error('Finish entering valid data first.');await draw({strict:true});downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
+  $('export-svg').onclick=()=>handle(async()=>{await reproject({strict:true});if(!validDataset())throw Error('Finish entering valid data first.');await draw({strict:true});downloadText('biostats_figure.svg',await figureSvg(plotEl,readSettings()),'image/svg+xml');message('Editable vector SVG exported.');});
+  $('export-png').onclick=()=>handle(async()=>{await reproject({strict:true});if(!validDataset())throw Error('Finish entering valid data first.');await draw({strict:true});downloadDataUrl('biostats_figure.png',await figurePng(plotEl,readSettings()));});
   $('print-pdf').onclick=()=>handle(async()=>{
+    await reproject({strict:true});
     if(!validDataset())throw Error('Finish entering valid data first.');
     await draw({strict:true});
     const svg=await figureSvg(plotEl,readSettings()),url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'}));

@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.6.0';
+export const APP_VERSION = '0.6.1';
 import {reproducibilitySection} from './reproducibility.js';
 export const PROJECT_SCHEMA_VERSION = '1.1.0';
 let folder = null;
