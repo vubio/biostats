@@ -85,7 +85,11 @@ export function buildReproductionPython(record){
   code+=`print('Recorded Python packages:',RECORDED_PACKAGES)\nprint('Installed versions:', {'scipy':scipy.__version__, 'statsmodels':statsmodels.__version__})\n`;
   code+=`# Analysis source: ${pythonString(ds.name||'experiment')}\n`;
   if(['summary','anova','welch_anova','kruskal','ttest','welch_ttest','paired_ttest','two_factor_xy'].includes(test)) {
-    code+=readGroups;
+    code+=test==='paired_ttest' ? `labels=[c.strip() for c in table[0][1:]]
+groups={label:np.array([float(row[i+1]) for row in table[1:] if len(row)>i+1 and str(row[i+1]).strip()],dtype=float) for i,label in enumerate(labels)}
+assert len(groups)==2 and len(set(map(len,groups.values())))==1, 'Complete matched rows are required'
+print('Paired observations:',len(next(iter(groups.values()))))
+` : readGroups;
     if(test==='two_factor_xy') {
       code+=parseXY;
       code+=`from statsmodels.formula.api import ols\nfrom statsmodels.stats.anova import anova_lm\n`;
