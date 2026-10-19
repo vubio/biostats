@@ -47,7 +47,7 @@ test('focused replay runs for summary and balanced ANOVA',()=>{
 
 test('paired replay ignores subject-ID text and keeps pairs aligned',()=>{
  const folder=fs.mkdtempSync(path.join(os.tmpdir(),'biostats-paired-'));
- fs.writeFileSync(path.join(folder,'input.csv'),'Subject ID,Before,After\\nM1,20,21\\nM2,23,24\\nM3,27,29\\nM4,21,23\\n');
+ fs.writeFileSync(path.join(folder,'input.csv'),'Subject ID,Before,After\nM1,20,21\nM2,23,24\nM3,27,29\nM4,21,23\n');
  const record={dataset:{test_id:'paired_ttest'},graph:{settings:{type:'dots'}},statistics:{label:'Paired t test',alternative:'two-sided',engine:{python_packages:{}}}};
  fs.writeFileSync(path.join(folder,'reproduce.py'),buildReproductionPython(record));
  assert.match(execFileSync('python',['reproduce.py'],{cwd:folder,encoding:'utf-8'}),/Paired t test/);
