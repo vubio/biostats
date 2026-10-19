@@ -1,4 +1,5 @@
-export const APP_VERSION = '0.5.0';
+export const APP_VERSION = '0.6.0';
+import {reproducibilitySection} from './reproducibility.js';
 export const PROJECT_SCHEMA_VERSION = '1.1.0';
 let folder = null;
 let project = null;
@@ -65,6 +66,7 @@ export async function saveNewRecord({record,svg,processedCsv,displayCsv=null}){
   const report=makeReport(snapshot);
   // Save artifacts before modifying project.json, which indexes successfully archived analyses.
   await write(dir,'analysis.json',JSON.stringify(snapshot,null,2));
+  if(snapshot.reproduction?.script)await write(dir,'reproduce.py',snapshot.reproduction.script);
   await write(dir,'figure.svg',svg);
   if(displayCsv!=null)await write(dir,'displayed_values.csv',displayCsv);
   await write(dir,'report.html',report);
@@ -115,6 +117,7 @@ export function makeReport(record){
     Transforms performed within BioStats: <code>${escapeHtml(JSON.stringify(ds.transformations||[]))}</code><br>
     Displayed numeric measurements archived in project? <strong>${ds.plotting?.displayed_values_stored?'Yes, displayed_values.csv':'No'}</strong></p>
     <p><small>The input fingerprint detects differences when values are available; it cannot reconstruct missing numerical values. For imported Excel files, SHA-256 of the original file and of the processed numerical table are deliberately different quantities.</small></p></section>
+    ${record.reproduction?.script?reproducibilitySection(record.reproduction.script):''}
     <section><h2>Reproducibility: Python statistical calculation</h2><p>BioStats ${escapeHtml(record.software.version)} · ${escapeHtml(record.software.runtime)}<br>
     Python package versions: <code>${escapeHtml(JSON.stringify(r.engine.python_packages))}</code><br>
     Function: <code>${escapeHtml(r.engine.primary_function)}</code><br>

@@ -5,6 +5,8 @@ import {examples,examplesFor,isPairedTest,isTTest} from './examples.js';
 import {METHODS,FAMILY_NAMES,isSpecial,specialHeaders,defaultLongRows,validateSpecialTable,familyForTest} from './families.js';
 import {renderSpecial} from './plots-special.js';
 import {PRESETS,getPreset,blankPresetRows,teachingPreset,suggestDoseTranspose,transposeDoseRows,transposeTable,normalizedGroups} from './presets.js';
+import {parseConditionNames,blankConditionRows,demoConditionRows,parseConditionColumns,conditionRecords,normalizeXYGroups,maybeConditionTranspose,transposeConditionRows} from './xy-series.js';
+import {buildReproductionPython} from './reproducibility.js';
 
 const $=id=>document.getElementById(id);
 const PAGE_SIZE=50;
@@ -44,6 +46,8 @@ function invalidate(){
   $('analysis-results').textContent='Dataset or analysis settings changed. Run statistics again on the current table.';
 }
 function signature(){return JSON.stringify({rows,name:name(),note:note(),family:entryFamily(),test:entryTest(),alternative:alternative(),alpha:alpha()});}
+const presetConditions=()=>parseConditionNames($('condition-labels').value);
+const hasCompositeXY=()=>Boolean(groups.length&&parseConditionColumns(groups));
 function csvCell(v){const t=String(v??'');return /[",\r\n\t]/.test(t)?`"${t.replaceAll('"','""')}"`:t;}
 function canonicalCsv(data){return data.map(row=>row.map(csvCell).join(',')).join('\n')+'\n';}
 async function sha256(str){const data=new TextEncoder().encode(str);return hashBytes(data);}
@@ -69,14 +73,14 @@ function parseRows(input){
 }
 function validateTable(data){
   if(!data.length)throw Error('Enter a dataset first.');
-  if(suggestDoseTranspose(data))throw Error('Dose values appear to be in ROWS. Click the one-click transpose suggestion before analysis.');
+  if(maybeConditionTranspose(data)||suggestDoseTranspose(data))throw Error('Dose values appear in rows. Use the one-click transpose suggestion before analysis.');
   const isPaired=paired();
   const labels=(isPaired?data[0].slice(1):data[0]).map(s=>s.trim());
   if(isPaired&&data[0][0]?.trim().toLowerCase()!=='subject id')throw Error('Paired tables must begin with the “Subject ID” column. Create a paired template or import a paired table.');
   if(labels.length<2||labels.some(x=>!x))throw Error('Enter at least two named measurement columns.');
   if(new Set(labels).size!==labels.length)throw Error('Group names must be unique.');
   if((isTTest(entryTest())||isPaired)&&labels.length!==2)throw Error('This test requires exactly two measurement columns.');
-  if(!isTTest(entryTest())&&entryTest()!=='summary'&&labels.length<3)throw Error('Choose at least three groups for this omnibus test.');
+  if(!isTTest(entryTest())&&entryTest()!=='summary'&&entryTest()!=='two_factor_xy'&&labels.length<3)throw Error('Choose at least three groups for this omnibus test.');
   const expected=labels.length+(isPaired?1:0),values=labels.map(()=>[]),ids=[];
   data.slice(1).forEach((row,index)=>{
     if(row.slice(expected).some(x=>String(x).trim()!==''))throw Error(`Extra value at row ${index+2}.`);
@@ -97,7 +101,9 @@ function validateTable(data){
   });
   if(values.some(v=>v.length<(entryTest()==='summary'?1:2)))throw Error(entryTest()==='summary'?'Enter at least one measurement per dose.':'Inferential tests require at least two independent measurements in every group. For technical-only wells, use Descriptive summary.');
   if(isPaired&&values[0].length!==values[1].length)throw Error('Every matched subject needs both measurements.');
-  return {groups:labels.map((label,i)=>({name:label,values:values[i]})),subjectIds:ids};
+  const prepared=labels.map((label,i)=>({name:label,values:values[i]}));
+  if(entryTest()==='two_factor_xy')conditionRecords(prepared); // enforce Condition | Dose labels before inference
+  return {groups:prepared,subjectIds:ids};
 }
 function fileChanged(){return importedRowsSnapshot!==null&&JSON.stringify(rows)!==importedRowsSnapshot;}
 function sourceDescription(){
@@ -107,9 +113,9 @@ function sourceDescription(){
 }
 function updateTransposeUI(){
   const suggestion=$('transpose-suggestion');if(!suggestion)return;
-  const suggest=entryFamily()==='groups'&&!paired()&&suggestDoseTranspose(rows);
+  const suggest=entryFamily()==='groups'&&!paired()&&(maybeConditionTranspose(rows)||suggestDoseTranspose(rows));
   suggestion.hidden=!suggest;
-  $('transpose-hint').textContent=suggest?'This table looks like doses in rows and replicate IDs in columns. Convert it to dose-column format with one click.':' ';
+  $('transpose-hint').textContent=suggest?'Detected dose rows with replicate columns. Click to convert to editable dose columns, preserving each condition and replicate.':' ';
   $('transpose-table').disabled=special()||paired()||!rows.length;
 }
 function updateReferenceOptions(){
@@ -117,8 +123,11 @@ function updateReferenceOptions(){
   const previous=select.value;select.replaceChildren();
   names.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;select.append(o)});
   if(names.includes(previous))select.value=previous;
+  else if(names.includes('WT | 0'))select.value='WT | 0';
   else if(names.includes('0'))select.value='0';
-  $('normalization-note').textContent=$('normalization-mode').value==='control100'?`Graph divided by the mean of reference group “${select.value||'first group'}” and multiplied by 100. Statistical tests still use raw data; this transformation is not applied before fitting.`:'Raw values are plotted. Statistics always use the current unmodified numerical measurements.';
+  const mode=$('normalization-mode').value;
+  $('normalization-reference').disabled=mode==='raw'||mode==='perCondition100'||special();
+  $('normalization-note').textContent=mode==='perCondition100'?'Each condition uses its own mean at zero dose (or lowest available dose) as 100%. Raw measurements are unchanged for statistics.':mode==='control100'?`All curves use the SAME reference “${select.value||'first group'}” as 100%; this preserves between-condition baseline differences. Statistics use raw measurements.`:'Raw values are plotted. Statistics use the current unmodified numerical measurements.';
 }
 function renderGrid(){
   const el=$('data-preview');el.replaceChildren();
@@ -183,7 +192,7 @@ async function replaceGrid(newRows,newSource,sourceSnapshot=null){
   gridPage=0;tableTransforms=[];invalidate();renderGrid();await reproject();
 }
 async function blankTable(){
-  if(selectedPreset){await replaceGrid(blankPresetRows(selectedPreset,Number($('replicate-count').value)),{kind:'manual',filename:null});$('data-input').value='';message('Blank dose-series table created. Dose headers are editable.');return;}
+  if(selectedPreset){await replaceGrid(blankConditionRows(presetConditions(),Number($('replicate-count').value)),{kind:'manual',filename:null});$('data-input').value='';message('Blank condition × dose table created. All headers and values are editable.');return;}
   const t=paired();const headers=t?['Subject ID','Before','After']:(isTTest(entryTest())?['Control','Treatment']:['Control','Drug A','Drug B']);
   const data=special()?defaultLongRows(entryTest()):[headers,...Array.from({length:6},(_,i)=>headers.map((_,j)=>t&&j===0?`Subject ${i+1}`:''))];
   await replaceGrid(data,{kind:'manual',filename:null});$('data-input').value='';message('Blank editable table created. Type directly into any cell.');
@@ -270,7 +279,7 @@ function resultHtml(r){
 
 async function runAnalysis(){
   await reproject({strict:true});
-  const input=special()?{family:entryFamily(),test:entryTest(),records:structuredClone(familyData.records),alpha:alpha()}:{groups:structuredClone(groups),test:entryTest(),alpha:alpha(),alternative:alternative(),subject_ids:paired()?structuredClone(subjectIds):null};
+  const input=entryTest()==='two_factor_xy'?{family:'factorial',test:'two_factor',records:conditionRecords(groups),alpha:alpha()}:special()?{family:entryFamily(),test:entryTest(),records:structuredClone(familyData.records),alpha:alpha()}:{groups:structuredClone(groups),test:entryTest(),alpha:alpha(),alternative:alternative(),subject_ids:paired()?structuredClone(subjectIds):null};
   const sig=signature();$('run-stats').disabled=true;
   try{
     const result=await runStatisticalTest(input,status=>{$('analysis-running').textContent=status;$('engine-status').textContent=status;});
@@ -284,9 +293,9 @@ async function runAnalysis(){
 function ensureResults(){if(!lastAnalysis)throw Error('Run a statistical analysis first.');if(signature()!==lastDataSignature)throw Error('Your data or settings changed. Rerun the test before saving or exporting its report.');}
 async function makeCurrentRecord(){
   ensureResults();const processed=canonicalCsv(rows),preserve=$('store-values').checked;
-  const plotGroups=groups.length?normalizedGroups(groups,$('normalization-mode').value,$('normalization-reference').value||null):null;
+  const plotGroups=groups.length?normalizeXYGroups(groups,$('normalization-mode').value,$('normalization-reference').value||null):null;
   const displayed=plotGroups?canonicalCsv([plotGroups.map(g=>g.name),...Array.from({length:Math.max(...plotGroups.map(g=>g.values.length))},(_,i)=>plotGroups.map(g=>g.values[i]??''))]):null;
-  return {schema_version:'1.1.0',created_at:new Date().toISOString(),
+  const record={schema_version:'1.1.0',created_at:new Date().toISOString(),
     software:{name:'BioStats',version:APP_VERSION,runtime:'Pyodide 0.28.3',source_page:location.origin+location.pathname,
       source_git_commit:'recorded by the deployment release when available'},
     dataset:{name:name(),note:note(),family:entryFamily(),test_id:entryTest(),preset_id:selectedPreset||null,
@@ -298,6 +307,8 @@ async function makeCurrentRecord(){
         modified_after_example:provenance.kind==='example'?fileChanged():null,
         original_file_unmodified:true}},
     graph:{settings:readSettings(),renderer:'Plotly.js',renderer_version:'3.7.0'},statistics:(()=>{const result=structuredClone(lastAnalysis);if(!preserve){delete result.subject_curves;if(result.survival)result.survival.forEach(curve=>{delete curve.censors});}return result;})()};
+  record.reproduction={filename:'reproduce.py',script:buildReproductionPython(record),input_filename:'input.csv'};
+  return record;
 }
 async function save(){
   if(!isProjectOpen())throw Error('Create or open a local project folder first.');
@@ -308,7 +319,7 @@ async function save(){
   }
   await draw({strict:true}); // preserve the currently selected brackets and last-minute graph settings
   const svg=await figureSvg(plotEl,rec.graph.settings);
-  const displayedGroups=groups.length?normalizedGroups(groups,rec.graph.settings.normalization,rec.graph.settings.reference):null;
+  const displayedGroups=groups.length?normalizeXYGroups(groups,rec.graph.settings.normalization,rec.graph.settings.reference):null;
   const displayedCsv=displayedGroups?canonicalCsv([displayedGroups.map(g=>g.name),...Array.from({length:Math.max(...displayedGroups.map(g=>g.values.length))},(_,i)=>displayedGroups.map(g=>g.values[i]??''))]):null;
   await saveNewRecord({record:rec,svg,processedCsv:rec.dataset.processed_values_stored?canonicalCsv(rows):null,
     displayCsv:rec.dataset.processed_values_stored?displayedCsv:null});
@@ -350,9 +361,10 @@ async function activatePreset(id){
   const preset=getPreset(id);
   $('analysis-family').value=preset.family;populateTestOptions();$('test-select').value=preset.test;
   $('replicate-count').value=String(preset.replicates);$('preset-preview-mode').value='columns';
+  $('condition-count').value='2';$('condition-labels').value='WT, KO';
   $('plot-type').value=preset.graphType;$('x-title').value=preset.xTitle;$('y-title').value=preset.yTitle;
   $('normalization-mode').value=preset.normalization;$('show-lines').checked=preset.showLines;
-  $('show-markers').checked=true;$('show-legend').checked=preset.showLegend;
+  $('show-markers').checked=true;$('show-legend').checked=true;
   $('annotation-mode').value='none';
   fillExampleOptions();
   $('dataset-name').value=preset.title;
@@ -379,10 +391,14 @@ function showMethodControls(){
   $('add-group').disabled=long||paired();
 }
 function fillExampleOptions(){
-  const opts=selectedPreset?[1,2,3,6].flatMap(n=>[
-    {id:`viability_${n}_columns`,title:`Cell viability: ${n} replicate${n===1?'':'s'} per dose`},
-    ...(n===3?[{id:'viability_3_rows',title:'Cell viability: doses in ROWS (transpose demonstration)'}]:[])
-  ]):examplesFor(entryTest());const list=$('example-select');list.replaceChildren();
+  const opts=selectedPreset?[
+    {id:'viability_1_1_columns',title:'WT only: 1 replicate / dose'},
+    {id:'viability_2_2_columns',title:'WT vs KO: 2 replicates / dose'},
+    {id:'viability_3_2_columns',title:'WT vs KO: 3 replicates / dose (default)'},
+    {id:'viability_6_2_columns',title:'WT vs KO: 6 replicates / dose'},
+    {id:'viability_3_4_columns',title:'Four conditions: 3 replicates / dose'},
+    {id:'viability_3_2_rows',title:'WT vs KO: doses in ROWS (transpose demo)'}
+  ]:examplesFor(entryTest());const list=$('example-select');list.replaceChildren();
   opts.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.title;list.append(o);});
   $('alternative-field').hidden=!isTTest(entryTest());
   $('template-hint').textContent=special()?`Required long-format columns: ${specialHeaders(entryTest()).join(' | ')}. Each row describes one biological observation; repeated-measures rows share a Subject ID.`:paired()?'Matched format: first column is Subject ID; the next two columns are measurements on the SAME subject. Every pair must occupy one row.':'Independent format: first row gives group names; each subsequent cell is a measurement from an independent biological replicate. No row-wise pairing is implied.';
@@ -392,7 +408,7 @@ function fillExampleOptions(){
 }
 function updateExampleInfo(){
   const selected=examples.find(e=>e.id===$('example-select').value);
-  if(selectedPreset){$('example-info').textContent='Synthetic luminescence vs Erastin2 concentrations (0, 0.05, 0.1, 0.2 µM). Columns hold concentrations, rows hold replicates. The 3-replicate ROW format intentionally demonstrates automatic transpose detection. Distinct wells from one experiment may be technical rather than biological replicates; a descriptive graph does not require inferential testing.';return;}
+  if(selectedPreset){$('example-info').textContent='Synthetic luminescence dose curves for one or more editable conditions (WT, KO, etc.). Each Condition | Dose column contains replicate values. The dose-row example tests smart transpose. A technical well is not automatically an independent biological replicate. ANOVA for Condition × Dose requires balanced independent biological replicates.';return;}
   $('example-info').textContent=selected?`${selected.summary} ${selected.rationale}`:'';
 }
 async function importData(file){
@@ -410,12 +426,33 @@ async function importData(file){
 function bind(){
   let previousTest=entryTest();
   $('project-preset').onchange=()=>handle(async()=>{const target=$('project-preset').value;if(target&&target!==selectedPreset&&rows.length&&!confirm('Activating this template creates a new editable table. Save your current work or copy its values before continuing. Continue?')){$('project-preset').value=selectedPreset;return;}await activatePreset(target);});
+  $('apply-conditions').onclick=()=>handle(async()=>{
+    if(!selectedPreset)throw Error('Choose a preset first.');
+    const count=Number($('condition-count').value);const labels=presetConditions();
+    if(labels.length!==count)throw Error(`Number of labels (${labels.length}) must equal number of conditions (${count}).`);
+    const n=Math.max(Number($('replicate-count').value),rows.length?rows.length-1:0);$('replicate-count').value=String(n);
+    if(maybeConditionTranspose(rows)||suggestDoseTranspose(rows))throw Error('Transpose dose-row measurements before changing conditions.');
+    const existing=rows.length?rows:blankConditionRows(labels,n);
+    const headers=existing[0],pattern=/^(.+?)\s*\|\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$/;
+    const oldDoses=[...new Set(headers.map(h=>pattern.exec(h)?.[2]).filter(x=>x!==undefined))];
+    const template=blankConditionRows(labels,n,oldDoses.length>=2?oldDoses:['0','0.05','0.1','0.2']);
+    const oldNames=[...new Set(headers.map(h=>pattern.exec(h)?.[1]?.trim()).filter(Boolean))];
+    const lookup=new Map(headers.map((h,i)=>[h,i]));
+    const findOld=(newName)=>{const direct=lookup.get(newName);if(direct!==undefined)return direct;const m=pattern.exec(newName);if(!m)return undefined;const oldLabel=oldNames[labels.indexOf(m[1].trim())];return lookup.get(`${oldLabel} | ${m[2]}`);};
+    const reused=new Set(template[0].map(findOld).filter(x=>x!==undefined));
+    const lost=headers.filter((_,i)=>!reused.has(i)&&existing.slice(1).some(r=>String(r[i]??'').trim()));
+    if(lost.length&&!confirm(`Changing conditions removes ${lost.length} populated condition × dose columns. Continue?`))return;
+    for(let i=1;i<template.length;i++)for(let j=0;j<template[0].length;j++){const old=findOld(template[0][j]);if(old!==undefined)template[i][j]=String(existing[i]?.[old]??'');}
+    const priorTransforms=tableTransforms.slice();
+    await replaceGrid(template,provenance,importedRowsSnapshot);tableTransforms=[...priorTransforms,'set_conditions:'+labels.join('|')];
+    message(`Now showing ${labels.length} conditions: ${labels.join(', ')}. Existing matching data were preserved.`);
+  });
   $('apply-replicates').onclick=()=>handle(async()=>{
     if(!selectedPreset)throw Error('Choose a preset first.');
     const count=Number($('replicate-count').value);
     if(!Number.isInteger(count)||count<1||count>24)throw Error('Replicates must be 1–24');
     if(!rows.length)return blankTable();
-    if(suggestDoseTranspose(rows))throw Error('Transpose the dose-row table first.');
+    if(maybeConditionTranspose(rows)||suggestDoseTranspose(rows))throw Error('Transpose the dose-row table first.');
     const old=rows.length-1;
     if(old>count&&rows.slice(count+1).some(row=>row.some(x=>String(x).trim()))&&
       !confirm(`Reducing ${old} to ${count} replicates will discard ${old-count} populated rows. Continue?`))return;
@@ -425,13 +462,14 @@ function bind(){
     invalidate();renderGrid();await reproject();message(`Dose table now has ${count} replicate rows.`);
   });
   $('transpose-suggested').onclick=()=>handle(async()=>{
-    rows=transposeDoseRows(rows);tableTransforms.push('dose_rows_to_columns');
+    rows=maybeConditionTranspose(rows)?transposeConditionRows(rows):transposeDoseRows(rows);tableTransforms.push('dose_rows_to_columns');
     invalidate();renderGrid();await reproject();message('Converted dose rows into dose headers, preserving every measurement.');
   });
   $('transpose-table').onclick=()=>handle(async()=>{
     if(special()||paired())throw Error('Transpose applies to independent-group tables only.');
     if(!rows.length)throw Error('Load a table first.');
-    if(suggestDoseTranspose(rows))rows=transposeDoseRows(rows);
+    if(maybeConditionTranspose(rows))rows=transposeConditionRows(rows);
+    else if(suggestDoseTranspose(rows))rows=transposeDoseRows(rows);
     else rows=transposeTable(rows);
     tableTransforms.push('manual_transpose');invalidate();renderGrid();await reproject();
     message('Transposed the editable table. Check headers and rerun analysis.');
@@ -458,13 +496,14 @@ function bind(){
   $('example-info-btn').onclick=()=>{const show=$('example-info').hidden;$('example-info').hidden=!show;$('example-info-btn').setAttribute('aria-expanded',String(show));};
   $('load-example').onclick=()=>handle(async()=>{
     if(selectedPreset){
-      const id=$('example-select').value,m=id.match(/^viability_(\d+)_(columns|rows)$/);
+      const id=$('example-select').value,m=id.match(/^viability_(\d+)_(\d+)_(columns|rows)$/);
       if(!m)throw Error('Choose a cell viability teaching example');
-      const n=Number(m[1]),orientation=$('preset-preview-mode').value;$('replicate-count').value=String(n);
-      const matrix=teachingPreset(selectedPreset,n,orientation);
-      $('dataset-name').value=`Cell Viability (1) — synthetic ${n}-replicate example`;
+      const n=Number(m[1]),c=Number(m[2]),orientation=m[3];$('replicate-count').value=String(n);$('condition-count').value=String(c);
+      const labels=['WT','KO','KO + Rescue','Condition 4'].slice(0,c);$('condition-labels').value=labels.join(', ');$('preset-preview-mode').value=orientation;
+      const matrix=demoConditionRows(labels,n,orientation);
+      $('dataset-name').value=`Cell Viability (1) — synthetic ${c}-condition, ${n}-replicate example`;
       $('data-sheet').value='SYNTHETIC EXAMPLE — not real experimental results; technical wells do not imply independent n.';
-      await replaceGrid(matrix,{kind:'example',example_id:id,example_title:`Cell viability (${n})`,filename:null});
+      await replaceGrid(matrix,{kind:'example',example_id:id,example_title:`Cell viability (${c} conditions, ${n} reps)`,filename:null});
       message(orientation==='rows'?'Dose-row example loaded. Use the transpose suggestion above the table.':'Synthetic dose-series example loaded. All values can be edited.');return;
     }
     const example=examples.find(e=>e.id===$('example-select').value);if(!example)throw Error('Choose an example.');
@@ -540,5 +579,7 @@ function bind(){
     await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('SVG printing failed'));});window.print();setTimeout(()=>URL.revokeObjectURL(url),60000);
   });
   $('download-report').onclick=()=>handle(async()=>{const rec=await makeCurrentRecord();downloadText('biostats_statistical_report.html',makeReport(rec),'text/html');});
+  $('download-python').onclick=()=>handle(async()=>{const rec=await makeCurrentRecord();downloadText('reproduce.py',rec.reproduction.script,'text/x-python');});
+  $('download-input').onclick=()=>handle(async()=>{await reproject({strict:true});downloadText('input.csv',canonicalCsv(rows),'text/csv');});
 }
 populateTestOptions();bind();fillExampleOptions();showSaved();plotEl.textContent='Choose a method and load example, create a blank table, or import measurements.';

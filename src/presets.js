@@ -2,7 +2,7 @@
 export const PRESETS={
   cell_viability_1:{id:'cell_viability_1',title:'Cell Viability (1)',family:'groups',test:'summary',
     xTitle:'Erastin2 (µM)',yTitle:'luminescence',doses:['0','0.05','0.1','0.2'],replicates:3,
-    graphType:'dose-line',normalization:'raw',showLines:true,showLegend:true,
+    graphType:'dose-line',normalization:'perCondition100',showLines:true,showLegend:true,
     description:'Erastin2 luminescence dose series. Default descriptive plot; inferential tests require genuinely independent biological replicates, not merely separate wells.'}
 };
 export const getPreset=id=>PRESETS[id]||null;

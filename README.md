@@ -5,7 +5,14 @@
 
 BioStats is a free browser-first biomedical statistics and vector graphing application. It is **an early prototype and not validated for manuscript submission**. Independently verify results, underlying biological replicates, and assumptions before scientific use.
 
-## Quick research templates (v0.5)
+## Quick research templates (v0.6)
+
+Cell Viability (1) defaults to **WT versus KO** (editable), with 1–8 condition labels and up to 24 replicates per condition/dose. Wide editable headers use `Condition | Dose`, e.g. `WT | 0`, `WT | 0.05`, `KO | 0`, `KO | 0.05`, which support any number of curves in the numeric-X plot. Importing doses in rows (`Dose (µM)`, `WT Rep 1`, `KO Rep 1`, ...) offers one-click conversion. Teaching examples cover one, two and four conditions, various n, and transpose. Generic grouped-XY tables use the same functionality.
+
+Graph normalization can use **each condition's own zero-dose mean as 100%** (within-condition change) or **one shared reference such as WT | 0** (preserves baseline differences). Both are graph transformations; the statistical engine receives raw values. Optional balanced independent condition × dose ANOVA uses the *existing* statsmodels two-factor model and does not produce pairwise genotype P values automatically.
+
+Each detailed HTML report embeds a focused, runnable `reproduce.py` containing only the relevant SciPy/statsmodels calls, the chart transformation and a matplotlib SVG redraw for grouped XY data. Saved analyses archive the script with `input.csv`, `analysis.json` and the original `figure.svg`. Scripts require the analyzed numerical input; hashes cannot reconstruct omitted data. The matplotlib redraw may differ in appearance from the frozen Plotly SVG. The report records package versions; published methods should name actual tests and libraries, not claim that BioStats is a validated statistical package.
+
 
 Choose **Cell Viability (1)** before selecting a statistical test. The template configures a generic independent-group table with numeric dose headers (0, 0.05, 0.1, 0.2 µM), a numeric Erastin2 X-axis, luminescence Y-axis, editable replicate counts, connected means, and optional individual wells. Import CSV/XLSX, or load a 1/2/3/6-well synthetic teaching dataset. A dose-in-rows spreadsheet triggers a one-click transpose suggestion; it cannot be accidentally analyzed as a dose-in-columns table before conversion.
 

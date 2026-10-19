@@ -1,4 +1,5 @@
 import {normalizedGroups,numericDoseCoordinates} from './presets.js';
+import {normalizeXYGroups,parseConditionColumns,multiLinePlotSpec} from './xy-series.js';
 export const PLOTLY_VERSION = '3.7.0';
 const palettes = {
   journal: ['#4782b7', '#218c87', '#d29a56', '#a17ab3', '#8c9586', '#df7f6a'],
@@ -17,7 +18,7 @@ export const defaultChartSettings = () => ({type:'dots',error:'sd',palette:'jour
 // The plot spec is deterministic and shared by browser preview and vector SVG export.
 export function plotSpec(groups, s, comparisons = [], alpha = .05) {
   if (!Array.isArray(groups)||groups.length<2||groups.some(g=>!g.values?.length)) throw Error('No valid numeric groups to plot.');
-  const plotGroups=normalizedGroups(groups,s.normalization||'raw',s.reference);
+  const plotGroups=normalizeXYGroups(groups,s.normalization||'raw',s.reference);
   if(s.type==='dose-line')return doseLineSpec(plotGroups,s,comparisons,alpha);
   groups=plotGroups;
   const colors = palettes[s.palette] || palettes.journal;
@@ -78,6 +79,8 @@ export function plotSpec(groups, s, comparisons = [], alpha = .05) {
 // Generic numeric X-axis plot for concentration and other quantitative dose series.
 // Group headers must be numeric. Original observations are never overwritten.
 export function doseLineSpec(groups,s,comparisons=[],alpha=.05){
+  const combined=multiLinePlotSpec(groups,s);
+  if(combined){if(comparisons.length)throw Error('Group × dose omnibus ANOVA does not establish specific pairwise P values. Add appropriate planned contrasts in a future module.');return combined;}
   const x=numericDoseCoordinates(groups);
   const order=x.map((v,i)=>({v,i})).sort((a,b)=>a.v-b.v);
   const sorted=order.map(z=>groups[z.i]),xs=order.map(z=>z.v);

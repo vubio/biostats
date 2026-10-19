@@ -15,7 +15,7 @@ from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from statsmodels.stats.multitest import multipletests
 
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 
 
 def _finite_number(x):

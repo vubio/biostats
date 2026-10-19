@@ -44,7 +44,7 @@ def _summaries(df, group='group', val='value'):
 
 
 def _base(payload,label,fn,args,limitations,df=None):
-    return dict(app_version='0.4.0',family=payload['family'],test_id=payload['test'],label=label,
+    return dict(app_version='0.6.0',family=payload['family'],test_id=payload['test'],label=label,
                 alpha=float(payload.get('alpha',0.05)),alternative='two-sided',
                 group_summaries=_summaries(df) if df is not None and 'group' in df and 'value' in df else [],
                 posthoc=None,significant=None,effect_size=None,statistic=None,df=[],p_value=None,
