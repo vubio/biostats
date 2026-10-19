@@ -1,7 +1,4 @@
-import sys
-from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'engine'))
-from engine import analyze
+from engine.engine import analyze
 
 def test_descriptive_single_well_no_p():
     r=analyze({'test':'summary','groups':[{'name':'0','values':[100]},{'name':'0.05','values':[80]}]})
