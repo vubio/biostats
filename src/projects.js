@@ -1,4 +1,4 @@
-export const APP_VERSION = '0.4.0';
+export const APP_VERSION = '0.5.0';
 export const PROJECT_SCHEMA_VERSION = '1.1.0';
 let folder = null;
 let project = null;
@@ -55,7 +55,7 @@ export async function loadRecord(id){
   const svg=await fileRead(dir,'figure.svg');
   return {analysis,svg};
 }
-export async function saveNewRecord({record,svg,processedCsv}){
+export async function saveNewRecord({record,svg,processedCsv,displayCsv=null}){
   if(!folder||!project)throw new Error('Create or open a local project first.');
   const id=`analysis_${new Date().toISOString().replace(/[:.]/g,'-')}_${crypto.randomUUID().slice(0,8)}`;
   const name=(record.dataset.name||'Untitled experiment').trim();
@@ -66,6 +66,7 @@ export async function saveNewRecord({record,svg,processedCsv}){
   // Save artifacts before modifying project.json, which indexes successfully archived analyses.
   await write(dir,'analysis.json',JSON.stringify(snapshot,null,2));
   await write(dir,'figure.svg',svg);
+  if(displayCsv!=null)await write(dir,'displayed_values.csv',displayCsv);
   await write(dir,'report.html',report);
   if(processedCsv!=null){
     await write(dir,'input.csv',processedCsv);
@@ -85,7 +86,7 @@ export function formatP(p){if(p==null || !Number.isFinite(p))return 'n/a';return
 export function makeReport(record){
   const r=record.statistics,ds=record.dataset;
   const df=(r.df||[]).map(x=>Number(x).toPrecision(5)).join(', ');
-  const rows=(r.group_summaries||[]).map(g=>`<tr><td>${escapeHtml(g.group)}</td><td>${g.n}</td><td>${g.mean.toPrecision(6)}</td><td>${g.sd.toPrecision(6)}</td><td>${g.sem.toPrecision(6)}</td></tr>`).join('');
+  const rows=(r.group_summaries||[]).map(g=>`<tr><td>${escapeHtml(g.group)}</td><td>${g.n}</td><td>${g.mean.toPrecision(6)}</td><td>${g.sd==null?'—':g.sd.toPrecision(6)}</td><td>${g.sem==null?'—':g.sem.toPrecision(6)}</td></tr>`).join('');
   const comparisonRows=r.posthoc?.comparisons?.length?`<h2>Pairwise comparisons — ${escapeHtml(r.posthoc.method)}</h2><table><thead><tr><th>Group 1</th><th>Group 2</th><th>Difference (group 2 − group 1)</th><th>Raw P (where available)</th><th>Adjusted P</th><th>${Math.round((1-r.alpha)*100)}% CI</th></tr></thead><tbody>${r.posthoc.comparisons.map(c=>`<tr><td>${escapeHtml(c.group1)}</td><td>${escapeHtml(c.group2)}</td><td>${c.difference==null?'—':c.difference.toPrecision(6)}</td><td>${c.p_raw==null?'—':formatP(c.p_raw)}</td><td>${formatP(c.p_adjusted)}</td><td>${c.ci_low==null?'Not calculated':c.ci_low.toPrecision(5)+' to '+c.ci_high.toPrecision(5)}</td></tr>`).join('')}</tbody></table>`:'';
   const source=ds.source||{};
   const valuesStored=ds.processed_values_stored??Boolean(ds.groups);
@@ -107,7 +108,12 @@ export function makeReport(record){
     <section><h2>Data provenance and exact inputs</h2>
     <p>Source category: <strong>${escapeHtml(kind)}</strong><br>Edited compared with original imported values? <strong>${escapeHtml(sourceStatus)}</strong><br>Original imported file modified by BioStats? <strong>No. The program reads a copy and does not write to the imported file.</strong></p>
     ${originalMeta}<p>Analyzed numerical values included in project? <strong>${savedText}</strong></p>
-    <p>SHA-256 of the exact CSV table sent to the analysis engine: <code>${escapeHtml(inputHash)}</code></p>
+    <p>SHA-256 of the exact analyzed raw numeric table: <code>${escapeHtml(inputHash)}</code></p>
+    <p>Research template: <strong>${escapeHtml(ds.preset_id||'Standard analysis')}</strong><br>
+    Graph transformation: <strong>${escapeHtml(ds.plotting?.normalization||'raw')}</strong> · 100% reference group: ${escapeHtml(ds.plotting?.reference||'none')}<br>
+    Displayed numeric values SHA-256: <code>${escapeHtml(ds.plotting?.displayed_sha256||'Not applicable')}</code><br>
+    Transforms performed within BioStats: <code>${escapeHtml(JSON.stringify(ds.transformations||[]))}</code><br>
+    Displayed numeric measurements archived in project? <strong>${ds.plotting?.displayed_values_stored?'Yes, displayed_values.csv':'No'}</strong></p>
     <p><small>The input fingerprint detects differences when values are available; it cannot reconstruct missing numerical values. For imported Excel files, SHA-256 of the original file and of the processed numerical table are deliberately different quantities.</small></p></section>
     <section><h2>Reproducibility: Python statistical calculation</h2><p>BioStats ${escapeHtml(record.software.version)} · ${escapeHtml(record.software.runtime)}<br>
     Python package versions: <code>${escapeHtml(JSON.stringify(r.engine.python_packages))}</code><br>
@@ -118,6 +124,7 @@ export function makeReport(record){
     Graph renderer: ${escapeHtml(record.graph.renderer)} ${escapeHtml(record.graph.renderer_version)} · Project schema: ${escapeHtml(record.schema_version)}<br>
     Software source URL at time of save: ${escapeHtml(record.software.source_page)}</p></section>
     <section><h2>Interpretation and limitations</h2><p>${escapeHtml(r.limitations)}</p>
+    <p>Graph X label: ${escapeHtml(record.graph.settings.xTitle||'Default')} · Y label: ${escapeHtml(record.graph.settings.yTitle||'Measurement')} · Lines: ${record.graph.settings.showLines!==false?'shown':'hidden'} · Legend: ${record.graph.settings.showLegend?'shown':'hidden'}.</p>
     <p>Saved graph-annotation preferences: <code>${escapeHtml(JSON.stringify(record.graph.settings.annotationMode))}</code>, label format <code>${escapeHtml(JSON.stringify(record.graph.settings.annotationFormat))}</code>, selected pairs <code>${escapeHtml(JSON.stringify(record.graph.settings.shownPairs || []))}</code>.</p>
     <p>The report documents the test implementation, not whether its assumptions were met. Verify experimental units, planned comparisons and source measurements before using the results in research.</p>
     <small>Analysis results are a frozen record. Software updates must not silently recalculate it. If reanalysis is requested, save a new record.</small></section></body></html>`;

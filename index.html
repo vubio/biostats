@@ -15,7 +15,7 @@
 <div class="shell">
   <header class="topbar">
     <div class="brand"><span class="brand-mark">β</span><div><strong>BioStats</strong><small>Scientific analysis studio</small></div></div>
-    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.4.0 · Prototype</span></div>
+    <div class="top-right"><span id="engine-status" class="status-pill">Statistics engine not loaded</span><span class="version">v0.5.0 · Prototype</span></div>
   </header>
   <div class="workspace">
     <aside class="sidebar">
@@ -44,6 +44,11 @@
       <div id="message" role="status" aria-live="polite" class="message" hidden></div>
       <section class="panel" id="method-section">
         <div class="panel-head"><div><span class="step">01</span><h2>Choose statistical analysis</h2><p>Your method controls table structure and available teaching examples.</p></div><span class="light-badge">Group comparisons · v0.3</span></div>
+        <div class="preset-launcher"><div class="field"><label for="project-preset">Quick research template · bypass method setup</label><select id="project-preset"><option value="">Standard analysis — select a statistical method</option><option value="cell_viability_1">Cell Viability (1) — Erastin2 luminescence dose series</option></select></div><p class="hint">A template preselects existing statistics, data layout, and graph settings. You can still change the statistical test afterward.</p></div>
+        <div id="preset-options" class="preset-options" hidden><div class="two-col">
+          <div class="field"><label for="replicate-count">Replicates per dose</label><input id="replicate-count" type="number" min="1" max="24" step="1" value="3"></div>
+          <div class="field"><label for="preset-preview-mode">Quick demonstration format</label><select id="preset-preview-mode"><option value="columns">Doses in columns; replicates in rows</option><option value="rows">Doses in rows; replicates in columns (try transpose)</option></select></div>
+        </div><div class="inline-actions"><button class="btn btn-soft" id="apply-replicates" type="button">Apply replicate count to table</button><span class="muted xsmall">Preserves current measurements unless you confirm deleting populated rows.</span></div></div>
         <div class="two-col">
           <div class="field"><label for="analysis-family">Analysis family</label><select id="analysis-family"><option value="groups">One measurement across groups</option><option value="time">Time course / repeated measures</option><option value="factorial">Two-factor designs</option><option value="survival">Survival analysis</option><option value="dose">Dose–response / IC50</option></select></div>
           <div class="field"><label for="test-select">Statistical test</label><select id="test-select"><option value="anova">Ordinary one-way ANOVA + Tukey HSD</option><option value="welch_anova">Welch ANOVA + pairwise Welch / Holm</option><option value="kruskal">Kruskal–Wallis + pairwise Mann–Whitney / Holm</option><option value="ttest">Student's unpaired t test (two groups)</option><option value="welch_ttest">Welch's unpaired t test (two groups)</option><option value="paired_ttest">Paired t test (matched rows)</option></select></div>
@@ -62,8 +67,9 @@
       <section class="panel" id="data-section">
         <div class="panel-head"><div><span class="step">02</span><h2>Enter or edit data</h2><p>Type directly into the cells, or import and modify any of the values.</p></div><label class="file-control btn btn-soft">Import CSV / XLSX<input type="file" id="data-file" accept=".csv,.tsv,.txt,.xlsx,.xls" hidden></label></div>
         <div class="two-col"><div class="field"><label for="dataset-name">Dataset name</label><input id="dataset-name" value="Untitled experiment" maxlength="100"></div><div class="field"><label for="data-sheet">Data source / note (optional)</label><input id="data-sheet" placeholder="e.g., 3 independent mice per treatment"></div></div>
-        <div class="inline-actions wrap"><button id="blank-table" class="btn btn-primary" type="button">Create blank table</button><button id="add-row" class="btn btn-soft" type="button">＋ Add row</button><button id="add-group" class="btn btn-soft" type="button">＋ Add group</button><button id="remove-row" class="btn btn-soft" type="button">Remove last row</button><span id="edit-state" class="muted xsmall"></span></div>
+        <div class="inline-actions wrap"><button id="blank-table" class="btn btn-primary" type="button">Create blank table</button><button id="transpose-table" class="btn btn-soft" type="button">Transpose table</button><button id="add-row" class="btn btn-soft" type="button">＋ Add row</button><button id="add-group" class="btn btn-soft" type="button">＋ Add group</button><button id="remove-row" class="btn btn-soft" type="button">Remove last row</button><span id="edit-state" class="muted xsmall"></span></div>
         <p class="hint">All visible cells are editable. Paste a rectangular selection from Excel into any cell. For larger files, use the page navigation to edit additional rows.</p>
+        <div id="transpose-suggestion" class="transpose-suggestion" hidden><span id="transpose-hint">Imported data appear to have doses in rows.</span><button class="btn btn-primary" id="transpose-suggested" type="button">Use doses as column headers</button></div>
         <div id="data-preview" class="data-preview"><p class="hint">Select a method and click “Create blank table,” “Load example,” or import a file.</p></div>
         <div id="table-navigation" class="table-navigation" hidden><button id="prev-page" class="btn btn-soft" type="button">← Previous 50</button><span id="page-info" class="muted xsmall"></span><button id="next-page" class="btn btn-soft" type="button">Next 50 →</button></div>
         <details class="paste-panel"><summary>Paste or replace an entire CSV/Excel-style table</summary><label for="data-input" class="field-label">Headers in the first row; tab- or comma-separated. This replaces the current table.</label><textarea id="data-input" spellcheck="false" placeholder="Control,Drug A,Drug B&#10;42,62,80&#10;47,61,85&#10;51,69,91"></textarea><div class="inline-actions"><button id="apply-data" class="btn btn-soft" type="button">Replace table with pasted values</button></div></details>
@@ -82,15 +88,20 @@
       <section class="panel" id="figure-section">
         <div class="panel-head"><div><span class="step">04</span><h2>Figure editor</h2><p>Live controls. Export actual SVG vectors, not a screenshot.</p></div><span class="light-badge">Plotly SVG traces</span></div>
         <div class="graph-controls">
-          <div class="field"><label for="plot-type">Graph type</label><select id="plot-type"><option value="dots">Individual values + mean</option><option value="bar">Mean + individual values</option><option value="box">Box + individual values</option></select></div>
+          <div class="field"><label for="plot-type">Graph type</label><select id="plot-type"><option value="dots">Individual values + mean</option><option value="bar">Mean + individual values</option><option value="box">Box + individual values</option><option value="dose-line">Numeric X-axis · dose / XY line</option></select></div>
           <div class="field"><label for="error-type">Error bars</label><select id="error-type"><option value="sd">Standard deviation (SD)</option><option value="sem">Standard error (SEM)</option><option value="none">None</option></select></div>
           <div class="field"><label for="palette">Colors</label><select id="palette"><option value="journal">Journal (blue/teal/gold)</option><option value="mono">Grayscale</option><option value="bright">High contrast</option></select></div>
           <div class="field"><label for="y-max">Y-axis max (blank = automatic)</label><input id="y-max" type="number" step="any" placeholder="Auto"></div>
+          <div class="field"><label for="x-title">X-axis title</label><input id="x-title" value="Group"></div>
+          <div class="field"><label for="normalization-mode">Graph values</label><select id="normalization-mode"><option value="raw">Raw measurements</option><option value="control100">Normalize to control mean = 100%</option></select></div>
+          <div class="field"><label for="normalization-reference">Normalization reference</label><select id="normalization-reference" title="Reference group used as the 100% denominator"></select></div>
           <div class="field"><label for="y-title">Y-axis title</label><input id="y-title" value="Measurement"></div>
           <div class="field"><label for="figure-title">Figure title (optional)</label><input id="figure-title" placeholder="e.g., Cholesterol"></div>
           <div class="field"><label for="font-size">Font size (px)</label><input id="font-size" type="number" min="8" max="32" value="15"></div>
           <div class="field"><label for="plot-width">Export width (px)</label><input id="plot-width" type="number" min="300" max="2400" value="800"></div>
         </div>
+        <div class="graph-toggle-row"><label class="check-row"><input id="show-lines" type="checkbox" checked> Connect means with lines</label><label class="check-row"><input id="show-markers" type="checkbox" checked> Show replicate points</label><label class="check-row"><input id="show-legend" type="checkbox"> Show legend</label><label class="check-row"><input id="show-point-labels" type="checkbox"> Label mean points</label></div>
+        <p id="normalization-note" class="hint">Normalization affects the figure only. Statistical tests use the unmodified raw numerical measurements.</p>
         <div class="comparison-controls">
           <div class="field"><label for="annotation-mode">Significance brackets</label><select id="annotation-mode"><option value="none">None</option><option value="control">Compare each group against first group</option><option value="all">All pairs (max 15 on graph)</option><option value="custom">Only checked pairs in comparison matrix</option></select></div>
           <div class="field"><label for="annotation-format">Bracket label</label><select id="annotation-format"><option value="stars">Asterisks (*, **, ***, ****; ns)</option><option value="p">Numerical adjusted P value</option><option value="raw">Raw (unadjusted) P, where defined</option></select></div>
@@ -107,7 +118,7 @@
         <div id="saved-analyses" class="saved-list"><p class="muted">Create or open a project folder to save analyses.</p></div>
         <p class="hint">Each saved analysis preserves the test output, reproducibility report, graph settings, frozen SVG, and Python package versions. Numerical values can optionally be omitted, but that limits exact reproducibility. Loading historical entries only views the saved records.</p>
       </section>
-      <footer class="footer">BioStats v0.4.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
+      <footer class="footer">BioStats v0.5.0 — Early research prototype · Verify results independently before manuscript use · <a href="https://github.com/vubio/biostats" target="_blank" rel="noopener noreferrer">Source repository</a></footer>
     </main>
   </div>
 </div>

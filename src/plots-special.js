@@ -61,12 +61,19 @@ export function specialPlotSpec(test,records,settings,result=null){
       if(fit)traces.push({type:'scatter',mode:'lines',name:name+` fit · IC50 ${fit.ic50.toPrecision(3)}`,x:fit.fitted.map(x=>x.dose),y:fit.fitted.map(x=>x.response),line:{color,width:2.5},hovertemplate:'Dose %{x:.3g}<br>Fit %{y:.3g}<extra>'+name+'</extra>'});
     });
   }else throw Error('Unsupported plot family');
-  const layout={template:'none',paper_bgcolor:'#fff',plot_bgcolor:'#fff',font:{family:'Arial, sans-serif',size:settings.fontSize||15,color:'#26343d'},
+  // Display settings are shared with the ordinary and dose-series graph editors.
+  if(settings.showLines===false && ['time_independent','time_repeated','two_factor'].includes(test)){
+    for(const t of traces){if(t.mode==='lines+markers')t.mode='markers';}
+  }
+  if(settings.showPointLabels){for(const t of traces){if(t.type==='scatter'&&Array.isArray(t.y)&&t.mode?.includes('markers')&&test!=='survival_logrank'){
+    t.text=t.y.map(v=>Number(v).toPrecision(3));t.textposition='top center';t.mode+='+text';
+  }}}
+  const layout={template:'none' ,paper_bgcolor:'#fff',plot_bgcolor:'#fff',font:{family:'Arial, sans-serif',size:settings.fontSize||15,color:'#26343d'},
     title:{text:settings.title||'',x:.5},
-    xaxis:{title:{text:test==='two_factor'?'Factor B':test==='survival_logrank'?'Time':test==='dose_4pl'?'Concentration (log scale)':'Time'},
+    xaxis:{title:{text:settings.xTitle&&settings.xTitle!=='Group'?settings.xTitle:test==='two_factor'?'Factor B':test==='survival_logrank'?'Time':test==='dose_4pl'?'Concentration (log scale)':'Time'},
       type:test==='dose_4pl'?'log':test==='two_factor'?'category':'linear',showline:true,linecolor:'#26343d',showgrid:false,zeroline:false},
     yaxis:{title:{text:test==='survival_logrank'?'Survival probability':settings.yTitle||'Measurement'},showline:true,linecolor:'#26343d',showgrid:false,zeroline:false,...(test==='survival_logrank'?{range:[0,1.04]}:settings.yMax!=null?{range:[null,settings.yMax]}:{})},
-    margin:{l:95,r:35,t:settings.title?60:30,b:80},hovermode:'closest',showlegend:true,legend:{orientation:'h',y:-.25,x:0}};
+    margin:{l:95,r:35,t:settings.title?60:30,b:80},hovermode:'closest',showlegend:!!settings.showLegend,legend:{orientation:'h',y:-.25,x:0}};
   return {traces,layout,config:{responsive:true,displaylogo:false,modeBarButtonsToRemove:['toImage','lasso2d','select2d']}};
 }
 export async function renderSpecial(el,test,records,settings,result){

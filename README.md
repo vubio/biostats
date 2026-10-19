@@ -1,9 +1,17 @@
-# BioStats · v0.4.0 — experimental prototype
+# BioStats · v0.5.0 — experimental prototype
 
 **Live app:** https://vubio.github.io/biostats/  
 **Source:** https://github.com/vubio/biostats
 
 BioStats is a free browser-first biomedical statistics and vector graphing application. It is **an early prototype and not validated for manuscript submission**. Independently verify results, underlying biological replicates, and assumptions before scientific use.
+
+## Quick research templates (v0.5)
+
+Choose **Cell Viability (1)** before selecting a statistical test. The template configures a generic independent-group table with numeric dose headers (0, 0.05, 0.1, 0.2 µM), a numeric Erastin2 X-axis, luminescence Y-axis, editable replicate counts, connected means, and optional individual wells. Import CSV/XLSX, or load a 1/2/3/6-well synthetic teaching dataset. A dose-in-rows spreadsheet triggers a one-click transpose suggestion; it cannot be accidentally analyzed as a dose-in-columns table before conversion.
+
+Raw and **control-mean-normalized (% = measurement / mean(reference) × 100)** display modes are graph transformations. Raw numerical measurements remain the inputs to statistical tests; the figure transformation, displayed-data checksum, edited/imported-file provenance, and optional numerical inputs are recorded with each analysis. If numerical storage is selected, the archived project contains both raw `input.csv` and normalized `displayed_values.csv`. Graph controls (numeric X-axis, axis titles, legend, markers, connected lines, labels, normalization) are available to ordinary analyses too, not just the preset.
+
+The default template uses **descriptive summary only**. Three technical wells from one experiment do not imply three independent biological replicates. Choose ANOVA only if its experimental-unit and model assumptions are appropriate.
 
 ## Workflow
 

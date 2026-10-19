@@ -4,6 +4,7 @@ import {newProject,openProject,isProjectOpen,currentProject,projectFolderName,sa
 import {examples,examplesFor,isPairedTest,isTTest} from './examples.js';
 import {METHODS,FAMILY_NAMES,isSpecial,specialHeaders,defaultLongRows,validateSpecialTable,familyForTest} from './families.js';
 import {renderSpecial} from './plots-special.js';
+import {PRESETS,getPreset,blankPresetRows,teachingPreset,suggestDoseTranspose,transposeDoseRows,transposeTable,normalizedGroups} from './presets.js';
 
 const $=id=>document.getElementById(id);
 const PAGE_SIZE=50;
@@ -20,6 +21,8 @@ const plotEl=$('plot');
 let drawTimer=null;
 let previewRevision=0;
 let chosenPairs=new Set();
+let tableTransforms=[];
+let selectedPreset='';
 const pairKey=(a,b)=>JSON.stringify([a,b].sort());
 const entryTest=()=>$('test-select').value;
 const entryFamily=()=>$('analysis-family').value;
@@ -66,13 +69,14 @@ function parseRows(input){
 }
 function validateTable(data){
   if(!data.length)throw Error('Enter a dataset first.');
+  if(suggestDoseTranspose(data))throw Error('Dose values appear to be in ROWS. Click the one-click transpose suggestion before analysis.');
   const isPaired=paired();
   const labels=(isPaired?data[0].slice(1):data[0]).map(s=>s.trim());
   if(isPaired&&data[0][0]?.trim().toLowerCase()!=='subject id')throw Error('Paired tables must begin with the “Subject ID” column. Create a paired template or import a paired table.');
   if(labels.length<2||labels.some(x=>!x))throw Error('Enter at least two named measurement columns.');
   if(new Set(labels).size!==labels.length)throw Error('Group names must be unique.');
   if((isTTest(entryTest())||isPaired)&&labels.length!==2)throw Error('This test requires exactly two measurement columns.');
-  if(!isTTest(entryTest())&&labels.length<3)throw Error('Choose at least three groups for this omnibus test.');
+  if(!isTTest(entryTest())&&entryTest()!=='summary'&&labels.length<3)throw Error('Choose at least three groups for this omnibus test.');
   const expected=labels.length+(isPaired?1:0),values=labels.map(()=>[]),ids=[];
   data.slice(1).forEach((row,index)=>{
     if(row.slice(expected).some(x=>String(x).trim()!==''))throw Error(`Extra value at row ${index+2}.`);
@@ -91,7 +95,7 @@ function validateTable(data){
       values[i].push(number);
     });
   });
-  if(values.some(v=>v.length<2))throw Error('At least two numerical measurements are required in every group.');
+  if(values.some(v=>v.length<(entryTest()==='summary'?1:2)))throw Error(entryTest()==='summary'?'Enter at least one measurement per dose.':'Inferential tests require at least two independent measurements in every group. For technical-only wells, use Descriptive summary.');
   if(isPaired&&values[0].length!==values[1].length)throw Error('Every matched subject needs both measurements.');
   return {groups:labels.map((label,i)=>({name:label,values:values[i]})),subjectIds:ids};
 }
@@ -101,9 +105,24 @@ function sourceDescription(){
   if(provenance.kind==='example')return `${provenance.example_title} · ${fileChanged()?'Edited example':'Unchanged example'}`;
   return 'Manually entered dataset';
 }
+function updateTransposeUI(){
+  const suggestion=$('transpose-suggestion');if(!suggestion)return;
+  const suggest=entryFamily()==='groups'&&!paired()&&suggestDoseTranspose(rows);
+  suggestion.hidden=!suggest;
+  $('transpose-hint').textContent=suggest?'This table looks like doses in rows and replicate IDs in columns. Convert it to dose-column format with one click.':' ';
+  $('transpose-table').disabled=special()||paired()||!rows.length;
+}
+function updateReferenceOptions(){
+  const select=$('normalization-reference'),names=(rows[0]||[]).slice(paired()?1:0).map(x=>String(x).trim()).filter(Boolean);
+  const previous=select.value;select.replaceChildren();
+  names.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=n;select.append(o)});
+  if(names.includes(previous))select.value=previous;
+  else if(names.includes('0'))select.value='0';
+  $('normalization-note').textContent=$('normalization-mode').value==='control100'?`Graph divided by the mean of reference group “${select.value||'first group'}” and multiplied by 100. Statistical tests still use raw data; this transformation is not applied before fitting.`:'Raw values are plotted. Statistics always use the current unmodified numerical measurements.';
+}
 function renderGrid(){
   const el=$('data-preview');el.replaceChildren();
-  if(!rows.length){el.textContent='No data yet. Use Create blank table, Load example, or Import.';$('table-navigation').hidden=true;return;}
+  if(!rows.length){el.textContent='No data yet. Use Create blank table, Load example, or Import.';$('table-navigation').hidden=true;updateTransposeUI();updateReferenceOptions();return;}
   const width=rows[0].length, dataN=Math.max(0,rows.length-1),pages=Math.max(1,Math.ceil(dataN/PAGE_SIZE));
   gridPage=Math.min(gridPage,pages-1);
   const start=1+gridPage*PAGE_SIZE,end=Math.min(rows.length,start+PAGE_SIZE);
@@ -133,6 +152,7 @@ function renderGrid(){
   $('prev-page').disabled=gridPage===0;$('next-page').disabled=gridPage>=pages-1;
   $('add-group').disabled=special()||paired()||rows[0].length>=40;
   $('remove-row').disabled=rows.length<=2;
+  updateTransposeUI();updateReferenceOptions();
 }
 async function reproject({strict=false}={}){
   const revision=++previewRevision;
@@ -160,9 +180,10 @@ async function replaceGrid(newRows,newSource,sourceSnapshot=null){
   rows=newRows.map(r=>r.map(v=>String(v??'')));
   const size=rows.reduce((maximum,row)=>Math.max(maximum,row.length),0);rows=rows.map(r=>Array.from({length:size},(_,i)=>r[i]??''));
   provenance=newSource;importedRowsSnapshot=sourceSnapshot??(newSource.kind==='manual'?null:JSON.stringify(rows));
-  gridPage=0;invalidate();renderGrid();await reproject();
+  gridPage=0;tableTransforms=[];invalidate();renderGrid();await reproject();
 }
 async function blankTable(){
+  if(selectedPreset){await replaceGrid(blankPresetRows(selectedPreset,Number($('replicate-count').value)),{kind:'manual',filename:null});$('data-input').value='';message('Blank dose-series table created. Dose headers are editable.');return;}
   const t=paired();const headers=t?['Subject ID','Before','After']:(isTTest(entryTest())?['Control','Treatment']:['Control','Drug A','Drug B']);
   const data=special()?defaultLongRows(entryTest()):[headers,...Array.from({length:6},(_,i)=>headers.map((_,j)=>t&&j===0?`Subject ${i+1}`:''))];
   await replaceGrid(data,{kind:'manual',filename:null});$('data-input').value='';message('Blank editable table created. Type directly into any cell.');
@@ -173,7 +194,9 @@ function readSettings(){
   if(!Number.isInteger(width)||width<300||width>2400)throw Error('Export width must be 300–2400 px.');
   if(fs<8||fs>32)throw Error('Font size must be 8–32 px.');
   return {...defaultChartSettings(),type:$('plot-type').value,error:$('error-type').value,palette:$('palette').value,yMax:max===''?null:Number(max),yTitle:$('y-title').value,title:$('figure-title').value,fontSize:fs,width,
-    annotationMode:$('annotation-mode').value,annotationFormat:$('annotation-format').value,shownPairs:selectedComparisons().map(c=>[c.group1,c.group2])};
+    annotationMode:$('annotation-mode').value,annotationFormat:$('annotation-format').value,shownPairs:selectedComparisons().map(c=>[c.group1,c.group2]),
+    xTitle:$('x-title').value,normalization:$('normalization-mode').value,reference:$('normalization-reference').value||null,
+    showLines:$('show-lines').checked,showMarkers:$('show-markers').checked,showLegend:$('show-legend').checked,showPointLabels:$('show-point-labels').checked};
 }
 function selectedComparisons(){
   if(!lastAnalysis || lastDataSignature!==signature())return [];
@@ -235,7 +258,7 @@ function syncPairChecks(){
 function resultHtml(r){
   const primary=r.p_value==null?'No hypothesis-test P value':`${r.primary_effect?escapeHtml(r.primary_effect)+': ':''}P = ${formatP(r.p_value)}`;
   const statistic=r.statistic==null?'':`Statistic = ${Number(r.statistic).toPrecision(6)} · df = ${(r.df||[]).map(x=>Number(x).toPrecision(5)).join(', ')} · α = ${r.alpha}`;
-  const summaries=(r.group_summaries||[]).map(x=>`<tr><td>${escapeHtml(x.group)}</td><td>${x.n}</td><td>${x.mean.toPrecision(5)}</td><td>${x.sd.toPrecision(5)}</td></tr>`).join('');
+  const summaries=(r.group_summaries||[]).map(x=>`<tr><td>${escapeHtml(x.group)}</td><td>${x.n}</td><td>${x.mean.toPrecision(5)}</td><td>${x.sd==null?'—':x.sd.toPrecision(5)}</td></tr>`).join('');
   const summaryTable=summaries?`<table class="results-table"><thead><tr><th>Group / cell</th><th>n</th><th>Mean</th><th>SD</th></tr></thead><tbody>${summaries}</tbody></table>`:'';
   const effects=r.effects?.length?`<h3>Factor-level effects</h3><table class="results-table"><thead><tr><th>Effect</th><th>F</th><th>Numerator / denominator df</th><th>P</th></tr></thead><tbody>${r.effects.map(x=>`<tr><td>${escapeHtml(x.effect)}</td><td>${x.statistic.toPrecision(5)}</td><td>${x.df.join(' / ')}</td><td>${formatP(x.p_value)}</td></tr>`).join('')}</tbody></table>`:'';
   const survival=r.survival?.length?`<h3>Survival observations</h3><table class="results-table"><thead><tr><th>Group</th><th>Animals / subjects</th><th>Events</th><th>Censored</th></tr></thead><tbody>${r.survival.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${x.n}</td><td>${x.events}</td><td>${x.censored}</td></tr>`).join('')}</tbody></table>`:'';
@@ -261,10 +284,15 @@ async function runAnalysis(){
 function ensureResults(){if(!lastAnalysis)throw Error('Run a statistical analysis first.');if(signature()!==lastDataSignature)throw Error('Your data or settings changed. Rerun the test before saving or exporting its report.');}
 async function makeCurrentRecord(){
   ensureResults();const processed=canonicalCsv(rows),preserve=$('store-values').checked;
+  const plotGroups=groups.length?normalizedGroups(groups,$('normalization-mode').value,$('normalization-reference').value||null):null;
+  const displayed=plotGroups?canonicalCsv([plotGroups.map(g=>g.name),...Array.from({length:Math.max(...plotGroups.map(g=>g.values.length))},(_,i)=>plotGroups.map(g=>g.values[i]??''))]):null;
   return {schema_version:'1.1.0',created_at:new Date().toISOString(),
     software:{name:'BioStats',version:APP_VERSION,runtime:'Pyodide 0.28.3',source_page:location.origin+location.pathname,
       source_git_commit:'recorded by the deployment release when available'},
-    dataset:{name:name(),note:note(),family:entryFamily(),test_id:entryTest(),groups:preserve&&!special()?structuredClone(groups):undefined,records:preserve&&special()?structuredClone(familyData.records):undefined,
+    dataset:{name:name(),note:note(),family:entryFamily(),test_id:entryTest(),preset_id:selectedPreset||null,
+      plotting:{normalization:$('normalization-mode').value,reference:$('normalization-reference').value||null,displayed_sha256:displayed?await sha256(displayed):null,
+        displayed_values_stored:preserve&&displayed!==null},transformations:tableTransforms.slice(),
+      groups:preserve&&!special()?structuredClone(groups):undefined,records:preserve&&special()?structuredClone(familyData.records):undefined,
       processed_sha256:await sha256(processed),processed_values_stored:preserve,
       source:{...provenance,modified_after_import:provenance.kind==='import'?fileChanged():null,
         modified_after_example:provenance.kind==='example'?fileChanged():null,
@@ -280,7 +308,10 @@ async function save(){
   }
   await draw({strict:true}); // preserve the currently selected brackets and last-minute graph settings
   const svg=await figureSvg(plotEl,rec.graph.settings);
-  await saveNewRecord({record:rec,svg,processedCsv:rec.dataset.processed_values_stored?canonicalCsv(rows):null});
+  const displayedGroups=groups.length?normalizedGroups(groups,rec.graph.settings.normalization,rec.graph.settings.reference):null;
+  const displayedCsv=displayedGroups?canonicalCsv([displayedGroups.map(g=>g.name),...Array.from({length:Math.max(...displayedGroups.map(g=>g.values.length))},(_,i)=>displayedGroups.map(g=>g.values[i]??''))]):null;
+  await saveNewRecord({record:rec,svg,processedCsv:rec.dataset.processed_values_stored?canonicalCsv(rows):null,
+    displayCsv:rec.dataset.processed_values_stored?displayedCsv:null});
   showSaved();message(`Analysis saved with ${rec.dataset.processed_values_stored?'':'NO '}numeric input copy; original source files were never modified.`);
 }
 function showSaved(){
@@ -311,6 +342,26 @@ async function viewFrozen(id){
   dialog.addEventListener('close',()=>{URL.revokeObjectURL(url);dialog.remove();});document.body.append(dialog);dialog.showModal();
 }
 function handle(fn){Promise.resolve().then(fn).catch(e=>{if(e.name==='AbortError')return;message(e?.message||String(e),true);});}
+async function activatePreset(id){
+  if(id&&!getPreset(id))throw Error('Unknown research template');
+  selectedPreset=id;
+  $('preset-options').hidden=!id;
+  if(!id){message('Standard analysis mode. Choose any statistical method.');return;}
+  const preset=getPreset(id);
+  $('analysis-family').value=preset.family;populateTestOptions();$('test-select').value=preset.test;
+  $('replicate-count').value=String(preset.replicates);$('preset-preview-mode').value='columns';
+  $('plot-type').value=preset.graphType;$('x-title').value=preset.xTitle;$('y-title').value=preset.yTitle;
+  $('normalization-mode').value=preset.normalization;$('show-lines').checked=preset.showLines;
+  $('show-markers').checked=true;$('show-legend').checked=preset.showLegend;
+  $('annotation-mode').value='none';
+  fillExampleOptions();
+  $('dataset-name').value=preset.title;
+  $('data-sheet').value='Luminescence values; specify whether rows are independent biological replicates or technical wells.';
+  rows=[];groups=[];familyData=null;subjectIds=[];
+  provenance={kind:'manual',filename:null};importedRowsSnapshot=null;invalidate();
+  renderGrid();await blankTable();
+  message(`${preset.title} ready. Raw/100% display and connected lines are graph settings, not new statistical tests.`);
+}
 function populateTestOptions(){
   const f=entryFamily(),methods=METHODS[f];if(!methods)throw Error('Unknown analysis family');
   const prev=entryTest();const sel=$('test-select');sel.replaceChildren();
@@ -323,10 +374,15 @@ function showMethodControls(){
   $('y-max').disabled=entryTest()==='survival_logrank';
   $('annotation-description').hidden=long;
   $('plot-type').disabled=long;
+  $('normalization-mode').disabled=long;
+  $('normalization-reference').disabled=long;
   $('add-group').disabled=long||paired();
 }
 function fillExampleOptions(){
-  const opts=examplesFor(entryTest());const list=$('example-select');list.replaceChildren();
+  const opts=selectedPreset?[1,2,3,6].flatMap(n=>[
+    {id:`viability_${n}_columns`,title:`Cell viability: ${n} replicate${n===1?'':'s'} per dose`},
+    ...(n===3?[{id:'viability_3_rows',title:'Cell viability: doses in ROWS (transpose demonstration)'}]:[])
+  ]):examplesFor(entryTest());const list=$('example-select');list.replaceChildren();
   opts.forEach(e=>{const o=document.createElement('option');o.value=e.id;o.textContent=e.title;list.append(o);});
   $('alternative-field').hidden=!isTTest(entryTest());
   $('template-hint').textContent=special()?`Required long-format columns: ${specialHeaders(entryTest()).join(' | ')}. Each row describes one biological observation; repeated-measures rows share a Subject ID.`:paired()?'Matched format: first column is Subject ID; the next two columns are measurements on the SAME subject. Every pair must occupy one row.':'Independent format: first row gives group names; each subsequent cell is a measurement from an independent biological replicate. No row-wise pairing is implied.';
@@ -336,6 +392,7 @@ function fillExampleOptions(){
 }
 function updateExampleInfo(){
   const selected=examples.find(e=>e.id===$('example-select').value);
+  if(selectedPreset){$('example-info').textContent='Synthetic luminescence vs Erastin2 concentrations (0, 0.05, 0.1, 0.2 µM). Columns hold concentrations, rows hold replicates. The 3-replicate ROW format intentionally demonstrates automatic transpose detection. Distinct wells from one experiment may be technical rather than biological replicates; a descriptive graph does not require inferential testing.';return;}
   $('example-info').textContent=selected?`${selected.summary} ${selected.rationale}`:'';
 }
 async function importData(file){
@@ -352,10 +409,40 @@ async function importData(file){
 }
 function bind(){
   let previousTest=entryTest();
+  $('project-preset').onchange=()=>handle(async()=>{const target=$('project-preset').value;if(target&&target!==selectedPreset&&rows.length&&!confirm('Activating this template creates a new editable table. Save your current work or copy its values before continuing. Continue?')){$('project-preset').value=selectedPreset;return;}await activatePreset(target);});
+  $('apply-replicates').onclick=()=>handle(async()=>{
+    if(!selectedPreset)throw Error('Choose a preset first.');
+    const count=Number($('replicate-count').value);
+    if(!Number.isInteger(count)||count<1||count>24)throw Error('Replicates must be 1–24');
+    if(!rows.length)return blankTable();
+    if(suggestDoseTranspose(rows))throw Error('Transpose the dose-row table first.');
+    const old=rows.length-1;
+    if(old>count&&rows.slice(count+1).some(row=>row.some(x=>String(x).trim()))&&
+      !confirm(`Reducing ${old} to ${count} replicates will discard ${old-count} populated rows. Continue?`))return;
+    rows=rows.slice(0,count+1);
+    while(rows.length<count+1)rows.push(Array(rows[0].length).fill(''));
+    tableTransforms.push(`resize_replicates:${old}->${count}`);
+    invalidate();renderGrid();await reproject();message(`Dose table now has ${count} replicate rows.`);
+  });
+  $('transpose-suggested').onclick=()=>handle(async()=>{
+    rows=transposeDoseRows(rows);tableTransforms.push('dose_rows_to_columns');
+    invalidate();renderGrid();await reproject();message('Converted dose rows into dose headers, preserving every measurement.');
+  });
+  $('transpose-table').onclick=()=>handle(async()=>{
+    if(special()||paired())throw Error('Transpose applies to independent-group tables only.');
+    if(!rows.length)throw Error('Load a table first.');
+    if(suggestDoseTranspose(rows))rows=transposeDoseRows(rows);
+    else rows=transposeTable(rows);
+    tableTransforms.push('manual_transpose');invalidate();renderGrid();await reproject();
+    message('Transposed the editable table. Check headers and rerun analysis.');
+  });
   $('analysis-family').addEventListener('change',()=>{
+    if(selectedPreset&&entryFamily()!=='groups'){
+      selectedPreset='';$('project-preset').value='';$('preset-options').hidden=true;$('normalization-mode').value='raw';$('plot-type').value='dots';
+    }
     if(rows.length&&!confirm('Switching analysis family will clear the current editable table. Save or copy your data first. Continue?')){ $('analysis-family').value=familyForTest(previousTest);return;}
     rows=[];groups=[];familyData=null;subjectIds=[];provenance={kind:'manual',filename:null};importedRowsSnapshot=null;
-    populateTestOptions();previousTest=entryTest();invalidate();renderGrid();fillExampleOptions();reproject();
+    populateTestOptions();previousTest=entryTest();$('show-legend').checked=entryFamily()!=='groups';invalidate();renderGrid();fillExampleOptions();reproject();
     $('annotation-mode').value='none';message(`Selected ${FAMILY_NAMES[entryFamily()]}. Load an example or create a method-specific table.`);
   });
   $('test-select').addEventListener('change',()=>{
@@ -370,6 +457,17 @@ function bind(){
   $('example-select').onchange=()=>{updateExampleInfo();$('example-info').hidden=true;$('example-info-btn').setAttribute('aria-expanded','false');};
   $('example-info-btn').onclick=()=>{const show=$('example-info').hidden;$('example-info').hidden=!show;$('example-info-btn').setAttribute('aria-expanded',String(show));};
   $('load-example').onclick=()=>handle(async()=>{
+    if(selectedPreset){
+      const id=$('example-select').value,m=id.match(/^viability_(\d+)_(columns|rows)$/);
+      if(!m)throw Error('Choose a cell viability teaching example');
+      const n=Number(m[1]),orientation=m[2];$('replicate-count').value=String(n);
+      $('preset-preview-mode').value=orientation;
+      const matrix=teachingPreset(selectedPreset,n,orientation);
+      $('dataset-name').value=`Cell Viability (1) — synthetic ${n}-replicate example`;
+      $('data-sheet').value='SYNTHETIC EXAMPLE — not real experimental results; technical wells do not imply independent n.';
+      await replaceGrid(matrix,{kind:'example',example_id:id,example_title:`Cell viability (${n})`,filename:null});
+      message(orientation==='rows'?'Dose-row example loaded. Use the transpose suggestion above the table.':'Synthetic dose-series example loaded. All values can be edited.');return;
+    }
     const example=examples.find(e=>e.id===$('example-select').value);if(!example)throw Error('Choose an example.');
     $('alternative').value=example.alternative||'two-sided';
     $('dataset-name').value=example.title;$('data-sheet').value='Synthetic training values only; not experimental measurements';
@@ -391,7 +489,7 @@ function bind(){
   $('next-page').onclick=()=>{gridPage++;renderGrid();};
   $('data-preview').addEventListener('input',e=>{
     const inp=e.target.closest('input[data-row][data-col]');if(!inp)return;
-    const ri=Number(inp.dataset.row),ci=Number(inp.dataset.col);rows[ri][ci]=inp.value;invalidate();refreshLater();
+    const ri=Number(inp.dataset.row),ci=Number(inp.dataset.col);rows[ri][ci]=inp.value;invalidate();updateTransposeUI();updateReferenceOptions();refreshLater();
   });
   $('data-preview').addEventListener('paste',e=>{
     const inp=e.target.closest('input[data-row][data-col]');const text=e.clipboardData?.getData('text/plain');
@@ -425,10 +523,11 @@ function bind(){
   });
   $('show-matrix').onchange=()=>{$('comparison-matrix').hidden=!$('show-matrix').checked;};
   for(const key of ['annotation-mode','annotation-format'])$(key).onchange=()=>{syncPairChecks();draw();};
-  for(const key of ['plot-type','error-type','palette','y-max','y-title','figure-title','font-size','plot-width']){
+  for(const key of ['plot-type','error-type','palette','y-max','x-title','y-title','figure-title','font-size','plot-width','normalization-mode','normalization-reference','show-lines','show-markers','show-legend','show-point-labels']){
     $(key).addEventListener('input',refreshLater);$(key).addEventListener('change',refreshLater);
   }
   for(const key of ['dataset-name','data-sheet'])$(key).addEventListener('input',()=>{invalidate();});
+  $('normalization-mode').addEventListener('change',()=>{const title=$('y-title');if($('normalization-mode').value==='control100'&&title.value.toLowerCase()==='luminescence')title.value='luminescence (% of control)';else if($('normalization-mode').value==='raw'&&title.value==='luminescence (% of control)')title.value='luminescence';updateReferenceOptions();refreshLater();});
   $('store-values').onchange=()=>{$('storage-warning').textContent=$('store-values').checked?
     'The exact analyzed numerical table will be saved as input.csv in the project (recommended for reproducibility).':
     'Numeric input will NOT be saved. The report will retain source-file metadata, input fingerprint, whether data were edited, and saved P values. Recalculation may not be possible.';};

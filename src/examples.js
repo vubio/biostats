@@ -1,5 +1,6 @@
 // Small, explicitly synthetic teaching datasets. Not scientific evidence.
 export const examples = [
+  {id:'summary_dose',test:'summary',title:'Descriptive dose series: no inferential P value',summary:'Three concentrations with single measurements; plotting without falsely treating technical wells as independent.',rationale:'Means require only one observation, but SD/SEM cannot be estimated from n=1. Choose a multiple-group statistical test only with a defensible independent biological replicate design.',csv:'0,0.05,0.2\n1000,790,400'},
   {id:'anova_balanced',test:'anova',title:'One-way ANOVA: three independent treatments',
    summary:'Three groups of different animals; ordinary one-way ANOVA with Tukey for all group pairs.',
    rationale:'Each animal appears in only one column. The overall F test evaluates a difference among means; Tukey adjusts multiple pairwise comparisons. Normal residuals and similar variances are assumptions to assess.',
