@@ -23,6 +23,7 @@ let lastDataSignature=null;
 const plotEl=$('plot');
 let drawTimer=null;
 let previewRevision=0;
+let plotQueue=Promise.resolve(); // Ensure rapid Plotly.react calls cannot finish out of order.
 let datasetValid=false; // Prevent export or analysis of a stale preview.
 let lastPreviewValid=false;
 let chosenPairs=new Set();
@@ -244,17 +245,20 @@ function selectedComparisons(){
 }
 async function draw({strict=false}={}){
   if(!validDataset())return;
-  try{
-    if(special()){
-      $('annotation-warning').textContent='';
-      await renderSpecial(plotEl,entryTest(),familyData.records,readSettings(),lastDataSignature===signature()?lastAnalysis:null);
-      return;
-    }
-    const selections=selectedComparisons();
-    if(selections.length>15)throw Error(`${selections.length} pairs selected. Maximum 15 graph brackets; select a subset in the comparison matrix. All P values remain accessible in the results.`);
+  const revision=previewRevision;
+  const long=special(),test=entryTest(),settings=readSettings(),chosen=selectedComparisons(),significance=alpha();
+  const input=structuredClone(long?familyData.records:groups);
+  const analysis=lastDataSignature===signature()?structuredClone(lastAnalysis):null;
+  const operation=plotQueue.catch(()=>{}).then(async()=>{
+    if(revision!==previewRevision||!datasetValid)return; // Replaced/edited data supersedes this draw.
+    if(chosen.length>15)throw Error(`${chosen.length} pairs selected. Maximum 15 graph brackets; select a subset in the comparison matrix. All P values remain accessible in the results.`);
     $('annotation-warning').textContent='';
-    await renderPlot(plotEl,groups,readSettings(),selections,alpha());
-  }catch(e){
+    if(long)await renderSpecial(plotEl,test,input,settings,analysis);
+    else await renderPlot(plotEl,input,settings,chosen,significance);
+  });
+  plotQueue=operation;
+  try{await operation;}
+  catch(e){
     $('annotation-warning').textContent=e.message;
     message(`Graphing error: ${e.message}. Numerical data remain intact.`,true);
     if(strict)throw e;
