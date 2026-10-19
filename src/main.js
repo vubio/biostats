@@ -7,6 +7,7 @@ import {renderSpecial} from './plots-special.js';
 import {PRESETS,getPreset,blankPresetRows,teachingPreset,suggestDoseTranspose,transposeDoseRows,transposeTable,normalizedGroups} from './presets.js';
 import {parseConditionNames,blankConditionRows,demoConditionRows,parseConditionColumns,conditionRecords,normalizeXYGroups,maybeConditionTranspose,transposeConditionRows} from './xy-series.js';
 import {buildReproductionPython} from './reproducibility.js';
+import {interactionGuide} from './statistical-guidance.js';
 
 const $=id=>document.getElementById(id);
 const PAGE_SIZE=50;
@@ -46,6 +47,7 @@ function invalidate(){
   $('comparison-panel').hidden=true;
   $('analysis-results').className='results-placeholder';
   $('analysis-results').textContent='Dataset or analysis settings changed. Run statistics again on the current table.';
+  renderInterpretationGuide();
 }
 function signature(){return JSON.stringify({rows,name:name(),note:note(),family:entryFamily(),test:entryTest(),alternative:alternative(),alpha:alpha()});}
 const presetConditions=()=>parseConditionNames($('condition-labels').value);
@@ -189,7 +191,13 @@ async function reproject({strict=false}={}){
   $('edit-state').textContent=special()?`${parsed.rows} complete observational rows · ${sourceDescription()}`:`${groups.length} groups · ${Math.max(...groups.map(g=>g.values.length))} max observations/group · ${sourceDescription()}`;
   // A plotting-library failure is distinct from invalid data. Never erase a
   // statistically valid dataset with a generic "complete the table" message.
-  await draw();
+  try{await draw({strict:true});}catch(e){
+    datasetValid=false;
+    $('preview-status').textContent='Graph rendering failed: '+e.message+'. Try Refresh graph after checking the graph settings.';
+    $('preview-status').className='preview-status preview-stale';
+    if(strict)throw e;
+    return;
+  }
   if(revision!==previewRevision)return;
   lastPreviewValid=true;
   $('preview-status').textContent='Graph updated from the current editable measurements.';
@@ -282,6 +290,22 @@ function syncPairChecks(){
   const selected=new Set(selectedComparisons().map(c=>pairKey(c.group1,c.group2)));
   document.querySelectorAll('.pair-checkbox').forEach(ch=>{ch.checked=selected.has(ch.dataset.pair);});
 }
+function renderInterpretationGuide(){
+  const el=$('interpretation-guide');
+  if(!el)return;
+  const model=interactionGuide(entryTest(),lastAnalysis&&lastDataSignature===signature()?lastAnalysis:null);
+  if(!model){el.hidden=true;el.replaceChildren();return;}
+  el.hidden=false;el.replaceChildren();
+  const heading=document.createElement('strong');heading.textContent=model.title;
+  const current=document.createElement('p');current.textContent=model.status;current.className='interpretation-status';
+  const detail=document.createElement('details');
+  const summary=document.createElement('summary');summary.textContent='ⓘ Why an interaction P value is not a per-dose comparison';
+  detail.append(summary);
+  for(const value of [model.main,model.example,model.follow,model.caution]){
+    const p=document.createElement('p');p.textContent=value;detail.append(p);
+  }
+  el.append(heading,current,detail);
+}
 function resultHtml(r){
   const primary=r.p_value==null?'No hypothesis-test P value':`${r.primary_effect?escapeHtml(r.primary_effect)+': ':''}P = ${formatP(r.p_value)}`;
   const statistic=r.statistic==null?'':`Statistic = ${Number(r.statistic).toPrecision(6)} · df = ${(r.df||[]).map(x=>Number(x).toPrecision(5)).join(', ')} · α = ${r.alpha}`;
@@ -302,7 +326,7 @@ async function runAnalysis(){
   try{
     const result=await runStatisticalTest(input,status=>{$('analysis-running').textContent=status;$('engine-status').textContent=status;});
     if(sig!==signature())throw Error('Data changed while the analysis was running. Run it again.');
-    lastAnalysis=result;lastDataSignature=sig;$('analysis-results').className='';$('analysis-results').innerHTML=resultHtml(result);
+    lastAnalysis=result;lastDataSignature=sig;$('analysis-results').className='';$('analysis-results').innerHTML=resultHtml(result);renderInterpretationGuide();
     chosenPairs.clear();renderComparisonMatrix();await draw();
     $('engine-status').textContent='Python statistical engine ready';$('engine-status').className='status-pill ready';
     message('Statistics calculated from the current editable table. Save to preserve results.');
@@ -422,6 +446,7 @@ function fillExampleOptions(){
   $('alternative-field').hidden=!isTTest(entryTest());
   $('template-hint').textContent=special()?`Required long-format columns: ${specialHeaders(entryTest()).join(' | ')}. Each row describes one biological observation; repeated-measures rows share a Subject ID.`:paired()?'Matched format: first column is Subject ID; the next two columns are measurements on the SAME subject. Every pair must occupy one row.':'Independent format: first row gives group names; each subsequent cell is a measurement from an independent biological replicate. No row-wise pairing is implied.';
   showMethodControls();
+  renderInterpretationGuide();
   $('example-info').hidden=true;$('example-info-btn').setAttribute('aria-expanded','false');
   updateExampleInfo();
 }

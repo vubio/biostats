@@ -27,4 +27,4 @@ jobs:
           node-version: '22'
       - run: |
           for script in src/*.js; do node --check "$script"; done
-      - run: node --test tests/presets.test.mjs tests/charts-preset.test.mjs
+      - run: node --test tests/presets.test.mjs tests/charts-preset.test.mjs tests/test-guidance.mjs
